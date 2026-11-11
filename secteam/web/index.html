@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>secteam trace</title>
+<style>
+/* Susun atur: penonton jejak bukti - indeks sesi | (fakta sesi, waterfall, log peristiwa berlajur).
+   Tiada fon luar: alat keselamatan tidak patut memanggil pihak ketiga semasa dibuka. */
+:root {
+  --paper: #f4f6f8;      /* latar: kelabu sejuk, condong ke biru kobalt */
+  --sheet: #fbfcfd;      /* permukaan log */
+  --ink: #161a1f;
+  --dim: #626b78;
+  --rule: #d5dbe2;
+  --signal: #1d56b8;     /* aksen tunggal: pilihan, pautan, fokus */
+  --signal-wash: #e3ebf8;
+  --ok: #24733a; --warn: #9a5800; --bad: #b42323; --bad-wash: #fbeaea; --warn-wash: #fbf1e2;
+  --a-lead: #5b6573; --a-recon: #a9571a; --a-code: #2a62a8; --a-intel: #6548a8; --a-ctf: #1f7c7c; --a-report: #3c7a3c;
+  --f-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --f-data: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  --f-head: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #101317; --sheet: #15191e; --ink: #d9dee5; --dim: #8b94a2; --rule: #272d35;
+    --signal: #7ea6f0; --signal-wash: #1a2639;
+    --ok: #6cc282; --warn: #e2a256; --bad: #f07a7a; --bad-wash: #2b1719; --warn-wash: #2a2114;
+    --a-lead: #a3acb8; --a-recon: #e09060; --a-code: #73a6e8; --a-intel: #a68fe6; --a-ctf: #5cc0c0; --a-report: #7cc07c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #101317; --sheet: #15191e; --ink: #d9dee5; --dim: #8b94a2; --rule: #272d35;
+  --signal: #7ea6f0; --signal-wash: #1a2639;
+  --ok: #6cc282; --warn: #e2a256; --bad: #f07a7a; --bad-wash: #2b1719; --warn-wash: #2a2114;
+  --a-lead: #a3acb8; --a-recon: #e09060; --a-code: #73a6e8; --a-intel: #a68fe6; --a-ctf: #5cc0c0; --a-report: #7cc07c;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--paper); color: var(--ink); font: 13px/1.45 var(--f-ui); }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+.mono { font-family: var(--f-data); }
+.dim { color: var(--dim); }
+
+/* ---- bingkai aplikasi ---- */
+.app { display: grid; grid-template-columns: 340px minmax(0, 1fr); height: 100%; }
+.index { display: flex; flex-direction: column; border-right: 1px solid var(--rule); min-height: 0; }
+.index-head { display: flex; align-items: baseline; gap: 8px; padding: 14px 14px 10px; }
+.wordmark { font: 600 15px var(--f-head); letter-spacing: -.01em; }
+.wordmark b { font-family: var(--f-data); font-weight: 600; }
+.sync { margin-left: auto; font: 11px var(--f-data); color: var(--dim); }
+.sync.off { color: var(--bad); }
+.filter { margin: 0 14px 10px; padding: 6px 9px; border: 1px solid var(--rule); background: var(--sheet); border-radius: 3px; }
+.sessions { overflow-y: auto; flex: 1; border-top: 1px solid var(--rule); }
+.srow { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 2px 10px; width: 100%; padding: 9px 14px;
+        text-align: left; background: none; border: 0; border-bottom: 1px solid var(--rule); cursor: pointer; }
+.srow:hover { background: var(--sheet); }
+.srow[aria-current="true"] { background: var(--signal-wash); }
+.srow .st { font: 600 10px/1.9 var(--f-data); letter-spacing: .06em; grid-row: span 2; }
+.st-selesai { color: var(--ok); } .st-berjalan { color: var(--signal); } .st-terhenti { color: var(--warn); }
+.srow .task { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srow .facts { font: 11px var(--f-data); color: var(--dim); display: flex; gap: 10px; flex-wrap: wrap; }
+.srow .facts .bad { color: var(--bad); } .srow .facts .warn { color: var(--warn); }
+
+.view { overflow-y: auto; min-width: 0; }
+.view-inner { padding-block: 18px 48px; padding-left: max(16px, 24px); padding-right: max(16px, 24px); display: grid; gap: 18px; max-width: 1280px; }
+.placeholder { color: var(--dim); padding: 80px 24px; }
+.placeholder code { font-family: var(--f-data); color: var(--ink); }
+
+/* ---- fakta sesi ---- */
+h1 { font: 600 19px/1.3 var(--f-head); margin: 0; text-wrap: balance; overflow-wrap: anywhere; }
+.facts-row { display: flex; flex-wrap: wrap; gap: 6px 26px; margin-top: 8px; }
+.fact { display: grid; gap: 1px; }
+.fact dt { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+.fact dd { margin: 0; font: 12px var(--f-data); }
+.fact dd .bad { color: var(--bad); } .fact dd .warn { color: var(--warn); }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--signal); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; font: 12px var(--f-data); }
+.actor { font: 600 11px var(--f-data); letter-spacing: .04em; color: var(--ac, var(--dim)); }
+
+/* ---- waterfall ---- */
+.section-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 0 0 6px; display: flex; gap: 14px; align-items: baseline; }
+.section-label .key { text-transform: none; letter-spacing: 0; display: inline-flex; align-items: center; gap: 5px; }
+.swatch { width: 12px; height: 6px; display: inline-block; }
+.trace { background: var(--sheet); border: 1px solid var(--rule); overflow-x: auto; }
+.trace svg { display: block; }
+.trace text { font: 11px var(--f-data); fill: var(--dim); }
+.trace .lane-label { font-weight: 600; }
+.trace .hit { cursor: pointer; }
+.trace .hit:hover { opacity: .75; }
+
+/* ---- log peristiwa ---- */
+.toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 6px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+.seg button { border: 0; background: var(--sheet); padding: 3px 10px; cursor: pointer; font-size: 12px; }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.toolbar .count { margin-left: auto; font: 11px var(--f-data); color: var(--dim); }
+
+.log { background: var(--sheet); border: 1px solid var(--rule); overflow-x: auto; }
+.grid { display: grid; grid-template-columns: 78px 66px 150px minmax(240px, 1fr) 70px 92px; min-width: 780px; }
+.lh, .lr > div { padding: 5px 10px; }
+.lh { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); border-bottom: 1px solid var(--rule); background: var(--paper); position: sticky; top: 0; }
+.lr { display: contents; }
+.lr > div { border-bottom: 1px solid var(--rule); min-width: 0; }
+.lr .t, .lr .du, .lr .src { font: 11.5px var(--f-data); color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lr .du, .lh.r { text-align: right; }
+.lr .ev { font: 12px var(--f-data); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lr .de { overflow-wrap: anywhere; }
+.lr .de .args { font: 11.5px var(--f-data); color: var(--dim); }
+.lr.click > div { cursor: pointer; }
+.lr.click:hover > div { background: var(--paper); }
+.lr.step > div { background: var(--paper); border-top: 1px solid var(--rule); }
+.lr.step .de { font-weight: 550; }
+.lr.step .de .why { display: block; font-weight: 400; color: var(--dim); font-size: 12px; }
+.lr.sub .ev { padding-left: 14px; }
+.lr.flash > div { animation: flash 1.4s ease-out; }
+@keyframes flash { from { background: var(--signal-wash); } }
+.mark { font: 600 10px var(--f-data); letter-spacing: .05em; padding: 0 4px; margin-right: 6px; border: 1px solid currentColor; border-radius: 2px; }
+.mark.ok { color: var(--ok); } .mark.bad { color: var(--bad); } .mark.warn { color: var(--warn); } .mark.run { color: var(--signal); }
+.lr.problem > div { background: var(--bad-wash); }
+.lr.caution > div { background: var(--warn-wash); }
+.detail { grid-column: 1 / -1; padding: 10px 12px 14px 144px; border-bottom: 1px solid var(--rule); background: var(--paper); display: grid; gap: 6px; }
+.detail .k { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+pre { margin: 0; font: 12px/1.5 var(--f-data); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto;
+      background: var(--sheet); border: 1px solid var(--rule); padding: 8px 10px; }
+pre .v-ok { color: var(--ok); font-weight: 600; } pre .v-bad { color: var(--bad); font-weight: 600; }
+
+/* ---- laporan ---- */
+.sheet-wrap { position: fixed; inset: 0; background: rgb(10 14 20 / .4); display: grid; justify-items: end; z-index: 30; }
+.sheet { width: min(760px, 100%); height: 100%; background: var(--sheet); border-left: 1px solid var(--rule); display: flex; flex-direction: column; }
+.sheet-head { display: flex; gap: 12px; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--rule); }
+.sheet-head .mono { font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-head button { margin-left: auto; border: 1px solid var(--rule); background: var(--paper); padding: 3px 10px; border-radius: 3px; cursor: pointer; }
+.md { padding: 8px 26px 40px; overflow-y: auto; line-height: 1.6; }
+.md > * { max-width: 68ch; }
+.md h1 { font-size: 19px; margin: 18px 0 8px; } .md h2 { font-size: 15px; margin: 22px 0 6px; } .md h3 { font-size: 13.5px; margin: 16px 0 4px; }
+.md table { border-collapse: collapse; margin: 8px 0; display: block; overflow-x: auto; max-width: 100%; }
+.md td, .md th { border: 1px solid var(--rule); padding: 4px 8px; text-align: left; font-size: 12px; }
+.md code { font-family: var(--f-data); font-size: 12px; }
+
+.tip { position: fixed; z-index: 40; pointer-events: none; background: var(--ink); color: var(--paper); padding: 4px 8px; font: 11px var(--f-data); max-width: 360px; }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .index { max-height: 38vh; border-right: 0; border-bottom: 1px solid var(--rule); }
+  .view-inner { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .detail { padding-left: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .lr.flash > div { animation: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="index" aria-label="Sesi">
+    <div class="index-head">
+      <span class="wordmark"><b>secteam</b> trace</span>
+      <span id="sync" class="sync">menyambung…</span>
+    </div>
+    <input id="filter" class="filter" type="search" placeholder="Tapis tugasan" autocomplete="off" aria-label="Tapis tugasan">
+    <div id="sessions" class="sessions"></div>
+  </nav>
+  <main class="view" id="view"><div class="placeholder">Memuatkan log…</div></main>
+</div>
+<div id="tip" class="tip" hidden></div>
+<div id="sheet" class="sheet-wrap" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-head"><span class="mono" id="sheetTitle"></span><button id="sheetClose" type="button">Tutup</button></div>
+    <div class="md" id="sheetBody"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const ACTOR = {
+  lead: ["LEAD", "--a-lead"], recon: ["RECON", "--a-recon"], code_auditor: ["CODE", "--a-code"],
+  threat_intel: ["INTEL", "--a-intel"], ctf_solver: ["CTF", "--a-ctf"], reporter: ["REPORT", "--a-report"], sys: ["SYS", "--dim"],
+};
+const code = a => (ACTOR[a] || [String(a || "?").toUpperCase().slice(0, 6)])[0];
+const color = a => `var(${(ACTOR[a] || [0, "--dim"])[1]})`;
+const S = { sessions: [], sel: null, detail: null, sig: "", open: new Set(), view: "semua", filter: "" };
+const STATUS = { selesai: "DONE", berjalan: "RUN", terhenti: "STOP" };
+
+function h(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k === "style") n.style.cssText = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) n.append(c instanceof Node ? c : String(c));
+  return n;
+}
+function s(tag, attrs = {}) {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+const clock = t => new Date(t * 1000).toLocaleTimeString("en-GB");
+const day = t => new Date(t * 1000).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+function plus(sec) {  // T+ mm:ss.mmm
+  const m = Math.floor(sec / 60), r = sec - m * 60;
+  return `+${String(m).padStart(2, "0")}:${r.toFixed(3).padStart(6, "0")}`;
+}
+function dur(sec) {
+  if (sec == null || isNaN(sec)) return "";
+  if (sec < 1) return `${Math.round(sec * 1000)} ms`;
+  if (sec < 60) return `${sec.toFixed(1)} s`;
+  return `${Math.floor(sec / 60)}m${String(Math.round(sec % 60)).padStart(2, "0")}s`;
+}
+function srcRef(src) {  // "audit-20261111.jsonl:123" -> "1111 L123" (tarikh penuh dalam tooltip)
+  const m = /audit-\d{4}(\d{4})\.jsonl:(\d+)/.exec(src || "");
+  return m ? `${m[1]} L${m[2]}` : (src || "");
+}
+const real = v => v && v !== "None" ? v : null;
+function args(a) {
+  if (!a || (typeof a === "object" && !Object.keys(a).length)) return "";
+  if (Array.isArray(a)) return JSON.stringify(a);
+  return Object.entries(a).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join("  ");
+}
+const getJSON = async u => { const r = await fetch(u, { cache: "no-store" }); if (!r.ok) throw new Error(r.status); return r.json(); };
+
+// ---------------- indeks sesi ----------------
+function renderIndex() {
+  const box = document.getElementById("sessions");
+  const f = S.filter.toLowerCase();
+  const rows = S.sessions.filter(x => !f || x.task.toLowerCase().includes(f)).map(x => {
+    const st = x.stats;
+    return h("button", { type: "button", class: "srow", "aria-current": x.id === S.sel ? "true" : "false", onclick: () => select(x.id) },
+      h("span", { class: "st st-" + x.status }, STATUS[x.status]),
+      h("span", { class: "task", title: x.task }, x.task),
+      h("span", { class: "facts" },
+        h("span", {}, `${day(x.start)} ${clock(x.start).slice(0, 5)}`),
+        h("span", {}, dur((x.end || x.last) - x.start)),
+        h("span", {}, `${st.tool_calls} alat`),
+        st.errors ? h("span", { class: "warn" }, `${st.errors} ralat`) : null,
+        st.scope_denied ? h("span", { class: "bad" }, `${st.scope_denied} luar skop`) : null,
+        st.unverified ? h("span", { class: "bad" }, `${st.unverified} tak disahkan`) : null));
+  });
+  box.replaceChildren(...(rows.length ? rows : [h("div", { class: "placeholder" }, "Tiada sesi sepadan.")]));
+}
+
+function select(id) {
+  if (S.sel === id) return;
+  S.sel = id; S.detail = null; S.sig = ""; S.open.clear();
+  history.replaceState(null, "", "#s=" + encodeURIComponent(id));
+  renderIndex(); load();
+}
+
+async function load() {
+  if (!S.sel) return;
+  try {
+    const d = await getJSON("/api/session?id=" + encodeURIComponent(S.sel));
+    const sig = d.events.length + d.summary.status;
+    if (sig === S.sig) return;
+    S.sig = sig; S.detail = d; render();
+  } catch { document.getElementById("view").replaceChildren(h("div", { class: "placeholder" }, "Sesi tidak dapat dimuatkan. Semak sama ada fail log masih wujud.")); }
+}
+
+// ---------------- model baris log ----------------
+function model(evs) {
+  const rows = [], pending = [];
+  let step = 0, stepRow = null;
+  for (const e of evs) {
+    switch (e.event) {
+      case "session_start":
+        rows.push({ kind: "sys", e, actor: "sys", ev: "sesi dimulakan",
+          de: [real(e.engagement_name) && `engagement ${e.engagement_name}`, real(e.code) && `kod ${e.code}`,
+               real(e.files) && `fail ${e.files}`, e.auto_approve && "auto-approve AKTIF"].filter(Boolean).join(" · ") || "tiada engagement dimuatkan" });
+        break;
+      case "supervisor_decision":
+        step++;
+        stepRow = { kind: "step", e, step, actor: "lead", ev: `→ ${code(e.next)}`, de: e.instruction || (e.next === "reporter" ? "Tulis laporan akhir" : ""), why: e.reason, d: e.ms != null ? e.ms / 1000 : null, target: e.next };
+        rows.push(stepRow); break;
+      case "loop_guard":
+        rows.push({ kind: "guard", e, actor: "lead", ev: "pengawal gelung", de: `${e.reason}; dialihkan ke REPORT`, caution: true }); break;
+      case "tool_call": {
+        const r = { kind: "tool", e, actor: e.agent, ev: e.tool, de: args(e.args), res: null, key: e.call || e._src };
+        rows.push(r); pending.push(r); break;
+      }
+      case "tool_result": case "tool_error": case "scope_denied": case "tool_cancelled": {
+        const r = pending.find(p => !p.res && (e.call ? p.e.call === e.call : p.e.tool === e.tool));
+        if (r) r.res = e; break;
+      }
+      case "exec":
+        rows.push({ kind: "exec", e, actor: e.agent || stepRow?.target, ev: "exec", de: (e.argv || []).join(" "), key: e._src }); break;
+      case "approval_request":
+        rows.push({ kind: "approval", e, actor: e.agent, ev: "minta kelulusan", de: `${e.action}: ${(e.detail || "").split("\n")[0]}`, caution: true, key: e._src, out: e.detail }); break;
+      case "approval_granted":
+        rows.push({ kind: "approval", e, actor: e.agent, ev: "diluluskan", de: `${e.action}${e.auto ? " (auto-approve)" : " oleh operator"}` }); break;
+      case "approval_denied":
+        rows.push({ kind: "approval", e, actor: e.agent, ev: "ditolak", de: `${e.action}${e.reason ? " (" + e.reason + ")" : ""}`, problem: true }); break;
+      case "specialist_result": {
+        const text = e.result || "";
+        const bad = e.unverified || text.includes("[TIDAK DISAHKAN]"), ok = !bad && text.includes("[DISAHKAN]");
+        const first = text.split("\n").find(l => l.trim()) || `(ringkasan tidak direkodkan dalam log lama; ${e.chars || 0} aksara)`;
+        rows.push({ kind: "result", e, actor: e.agent, ev: "ringkasan", de: first.replace(/[*#`]/g, "").slice(0, 200), out: text || null,
+          verdict: bad ? "bad" : ok ? "ok" : null, problem: bad, key: e._src });
+        break;
+      }
+      case "reporter_done":
+        rows.push({ kind: "report", e, actor: "reporter", ev: "laporan ditulis", de: `${e.chars || 0} aksara`, d: e.ms != null ? e.ms / 1000 : null }); break;
+      case "session_end":
+        rows.push({ kind: "end", e, actor: "sys", ev: "sesi tamat", de: e.report || "", report: e.report }); break;
+    }
+  }
+  for (const r of rows) if (r.kind === "tool") {
+    const res = r.res;
+    r.d = res ? (res.ms != null ? res.ms / 1000 : res.t - r.e.t) : null;
+    r.status = !res ? "run" : { tool_result: "ok", tool_error: "err", scope_denied: "denied", tool_cancelled: "cancel" }[res.event];
+    r.problem = r.status === "err" || r.status === "denied";
+    r.caution = r.status === "cancel";
+    r.out = res ? (res.preview ?? res.error ?? res.reason ?? `(output tidak direkodkan dalam log lama; ${res.chars || 0} aksara)`) : null;
+  }
+  return rows;
+}
+
+const VIEWS = {
+  semua: () => true,
+  keputusan: r => ["step", "guard", "result", "report", "end", "sys"].includes(r.kind),
+  alat: r => ["tool", "exec", "approval"].includes(r.kind),
+  masalah: r => r.problem || r.caution,
+};
+
+// ---------------- paparan sesi ----------------
+function render() {
+  const { summary: x, events } = S.detail;
+  const rows = model(events);
+  const t0 = x.start;
+  const total = (x.end || (x.status === "berjalan" ? Date.now() / 1000 : x.last)) - t0;
+  const st = x.stats;
+  const fact = (k, ...v) => h("div", { class: "fact" }, h("dt", {}, k), h("dd", {}, ...v));
+  const counters = [
+    `${st.decisions} keputusan`, `${st.tool_calls} alat`,
+    st.errors && h("span", { class: "warn" }, `${st.errors} ralat`),
+    st.scope_denied && h("span", { class: "bad" }, `${st.scope_denied} luar skop`),
+    st.approvals && `${st.approvals} kelulusan`,
+    st.loop_guard && h("span", { class: "warn" }, `${st.loop_guard} gelung disekat`),
+    st.unverified && h("span", { class: "bad" }, `${st.unverified} tak disahkan`),
+  ].filter(Boolean).flatMap((v, i) => i ? [" · ", v] : [v]);
+
+  const head = h("header", {},
+    h("h1", {}, x.task),
+    h("dl", { class: "facts-row" },
+      fact("Status", h("span", { class: "st-" + x.status }, STATUS[x.status])),
+      fact("Mula", `${day(t0)} ${clock(t0)}`),
+      fact("Tempoh", dur(total)),
+      fact("Pasukan", ...x.members.flatMap((m, i) => [i ? " " : "", h("span", { class: "actor", style: `--ac:${color(m)}` }, code(m))])),
+      x.engagement ? fact("Engagement", x.engagement) : null,
+      x.code ? fact("Kod", h("span", { title: x.code }, x.code.split(/[\\/]/).pop())) : null,
+      x.files ? fact("Fail CTF", h("span", { title: x.files }, x.files.split(/[\\/]/).pop())) : null,
+      fact("Aktiviti", ...counters),
+      x.report ? fact("Laporan", h("button", { type: "button", class: "linkbtn", onclick: () => openReport(x.report) }, "buka")) : null));
+
+  const lanes = ["lead", ...new Set([...x.members, ...events.map(e => e.agent).filter(a => a && a !== "?" && a !== "reporter")]), "reporter"];
+  const trace = h("section", {},
+    h("p", { class: "section-label" }, "Waterfall",
+      h("span", { class: "key" }, h("span", { class: "swatch", style: "background:var(--dim);opacity:.25;outline:1px solid var(--dim)" }), "tempoh tugasan"),
+      h("span", { class: "key" }, h("span", { class: "swatch", style: "background:var(--dim)" }), "panggilan alat"),
+      h("span", { class: "key" }, h("span", { class: "swatch", style: "background:var(--bad)" }), "ralat / luar skop")),
+    h("div", { class: "trace", id: "trace" }));
+
+  const visible = rows.filter(VIEWS[S.view]);
+  const seg = h("div", { class: "seg", role: "group", "aria-label": "Tapis peristiwa" },
+    ...[["semua", "Semua"], ["keputusan", "Keputusan"], ["alat", "Alat"], ["masalah", "Masalah"]].map(([k, l]) =>
+      h("button", { type: "button", "aria-pressed": S.view === k ? "true" : "false", onclick: () => { S.view = k; render(); } }, l)));
+
+  const grid = h("div", { class: "grid", role: "table" },
+    ...["T+", "Pelaku", "Peristiwa", "Butiran", "Tempoh", "Sumber log"].map((c, i) => h("div", { class: "lh" + (i === 4 ? " r" : ""), role: "columnheader" }, c)),
+    ...visible.flatMap(r => logRow(r, t0)));
+  const log = h("section", {},
+    h("div", { class: "toolbar" }, h("p", { class: "section-label", style: "margin:0" }, "Log peristiwa"), seg,
+      h("span", { class: "count" }, `${visible.length} / ${rows.length} baris`)),
+    h("div", { class: "log" }, grid));
+
+  const view = document.getElementById("view");
+  const keep = view.scrollTop;
+  view.replaceChildren(h("div", { class: "view-inner" }, head, trace, log));
+  view.scrollTop = keep;
+  drawTrace(document.getElementById("trace"), x, rows, lanes);
+}
+
+function logRow(r, t0) {
+  const expandable = r.out != null;
+  const open = expandable && S.open.has(r.key);
+  let mark = null;
+  if (r.kind === "tool") mark = { ok: ["OK", "ok"], err: ["ERR", "bad"], denied: ["SKOP", "bad"], cancel: ["BATAL", "warn"], run: ["…", "run"] }[r.status];
+  if (r.kind === "result" && r.verdict) mark = r.verdict === "ok" ? ["SAH", "ok"] : ["TAK SAH", "bad"];
+  const cls = ["lr", r.kind === "step" ? "step" : "", ["tool", "exec", "approval"].includes(r.kind) ? "sub" : "",
+    expandable ? "click" : "", r.problem ? "problem" : "", r.caution ? "caution" : ""].filter(Boolean).join(" ");
+  const toggle = expandable ? () => { S.open.has(r.key) ? S.open.delete(r.key) : S.open.add(r.key); render(); } : null;
+  const de = r.kind === "step"
+    ? h("div", { class: "de" }, r.de, r.why ? h("span", { class: "why" }, r.why) : null)
+    : r.kind === "tool" || r.kind === "exec"
+      ? h("div", { class: "de" }, mark ? h("span", { class: "mark " + mark[1] }, mark[0]) : null, h("span", { class: "args" }, r.de || "()"))
+      : r.kind === "end" && r.report
+        ? h("div", { class: "de" }, h("button", { type: "button", class: "linkbtn", onclick: ev => { ev.stopPropagation(); openReport(r.report); } }, r.report))
+        : h("div", { class: "de" }, mark ? h("span", { class: "mark " + mark[1] }, mark[0]) : null, r.de);
+  const row = h("div", { class: cls, role: "row", id: r.key ? "row-" + r.key : r.kind === "step" ? "step-" + r.step : null,
+      onclick: toggle, tabindex: expandable ? "0" : null, "aria-expanded": expandable ? String(open) : null,
+      onkeydown: expandable ? ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); } } : null },
+    h("div", { class: "t" }, plus(r.e.t - t0)),
+    h("div", {}, h("span", { class: "actor", style: `--ac:${color(r.actor)}` }, code(r.actor))),
+    h("div", { class: "ev", title: r.ev }, r.kind === "step" ? `#${r.step} ${r.ev}` : r.ev),
+    de,
+    h("div", { class: "du" }, dur(r.d)),
+    h("div", { class: "src", title: r.e._src ? `logs\\${r.e._src}` : "" }, srcRef(r.e._src)));
+  if (!open) return [row];
+  const parts = [];
+  if (r.kind === "tool") parts.push(h("div", { class: "k" }, "Argumen"), h("pre", {}, JSON.stringify(r.e.args, null, 2)),
+    h("div", { class: "k" }, r.status === "ok" ? `Output (${r.res.chars ?? "?"} aksara, log ${r.res._src})` : `${r.res?.event || "berjalan"} (log ${r.res?._src || "-"})`));
+  else if (r.kind === "result") parts.push(h("div", { class: "k" }, "Ringkasan penuh agent"));
+  else parts.push(h("div", { class: "k" }, "Butiran"));
+  const pre = h("pre", {});
+  for (const line of String(r.out).split("\n")) {
+    pre.append(line.includes("[TIDAK DISAHKAN]") ? h("span", { class: "v-bad" }, line) : line.includes("[DISAHKAN]") ? h("span", { class: "v-ok" }, line) : line, "\n");
+  }
+  parts.push(pre);
+  return [row, h("div", { class: "detail" }, ...parts)];
+}
+
+// ---------------- waterfall ----------------
+function drawTrace(box, x, rows, lanes) {
+  const t0 = x.start;
+  const t1 = Math.max(x.end || (x.status === "berjalan" ? Date.now() / 1000 : x.last), t0 + 1);
+  const W = Math.max(box.clientWidth, 640), LW = 74, LH = 24, TOP = 20, H = TOP + lanes.length * LH + 6;
+  const X = t => LW + ((t - t0) / (t1 - t0)) * (W - LW - 16);
+  const Y = a => TOP + Math.max(lanes.indexOf(a), 0) * LH;
+  const g = s("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Waterfall aktiviti agent" });
+  // pembaris masa
+  const span = t1 - t0, stepS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600].find(v => span / v <= 10) || 3600;
+  for (let v = 0; v <= span + 1e-9; v += stepS) {
+    const xx = X(t0 + v);
+    g.append(s("line", { x1: xx, x2: xx, y1: TOP - 4, y2: H - 4, stroke: "var(--rule)", "stroke-width": 1 }));
+    const tx = s("text", { x: xx + 3, y: 12 }); tx.textContent = plus(v).replace(/\.\d+$/, ""); g.append(tx);
+  }
+  lanes.forEach((a, i) => {
+    g.append(s("line", { x1: 0, x2: W, y1: TOP + (i + 1) * LH, y2: TOP + (i + 1) * LH, stroke: "var(--rule)", "stroke-width": 1 }));
+    const tx = s("text", { x: 8, y: TOP + i * LH + 16, class: "lane-label", fill: color(a) }); tx.textContent = code(a); g.append(tx);
+  });
+  const mark = (lane, a, b, kind, tip, target, bad) => {
+    const xa = X(a), w = Math.max(X(b) - xa, kind === "span" ? 2 : 2.5), y = Y(lane);
+    const attrs = kind === "span"
+      ? { x: xa, y: y + 4, width: w, height: LH - 8, fill: color(lane), "fill-opacity": .12, stroke: color(lane), "stroke-opacity": .7, "stroke-width": 1 }
+      : kind === "tick"
+        ? { x: xa, y: y + 3, width: Math.max(w, 2), height: LH - 6, fill: color(lane) }
+        : { x: xa, y: y + 8, width: w, height: LH - 16, fill: bad ? "var(--bad)" : color(lane) };
+    const r = s("rect", { ...attrs, class: "hit" });
+    r.addEventListener("mousemove", ev => tipShow(ev, tip));
+    r.addEventListener("mouseleave", tipHide);
+    if (target) r.addEventListener("click", () => jump(target));
+    g.append(r);
+  };
+  let cur = null;
+  const spans = [];
+  for (const r of rows) {
+    if (r.kind === "step") {
+      mark("lead", r.e.t - (r.d || 0), r.e.t, "tick", `#${r.step} LEAD → ${code(r.target)}  ${dur(r.d)}`, "step-" + r.step);
+      cur = r.target !== "reporter" ? { lane: r.target, a: r.e.t, b: null, step: r.step } : null;
+      if (cur) spans.push(cur);
+    } else if (cur && ["tool", "result", "exec", "approval"].includes(r.kind)) {
+      cur.b = Math.max(cur.b || 0, r.res ? r.res.t : r.e.t);
+    }
+    if (r.kind === "tool") {
+      const end = r.res ? r.res.t : Date.now() / 1000, start = r.d != null && r.res ? end - r.d : r.e.t;
+      mark(r.actor && r.actor !== "?" ? r.actor : cur?.lane || "lead", start, end, "tool",
+        `${code(r.actor)} ${r.e.tool}  ${r.res ? dur(end - start) : "berjalan"}${r.problem ? "  " + r.status.toUpperCase() : ""}`, "row-" + r.key, r.problem);
+    }
+  }
+  for (const sp of spans) {
+    const b = sp.b || (x.status === "berjalan" ? Date.now() / 1000 : sp.a);
+    mark(sp.lane, sp.a, b, "span", `#${sp.step} ${code(sp.lane)}  ${dur(b - sp.a)}`, "step-" + sp.step);
+  }
+  const rep = rows.find(r => r.kind === "report");
+  if (rep) mark("reporter", rep.e.t - (rep.d || 0), rep.e.t, "span", `REPORT  ${dur(rep.d)}`, null);
+  // bar tempoh dilukis dahulu supaya bar alat kekal di atas
+  [...g.querySelectorAll("rect[fill-opacity]")].forEach(n => g.insertBefore(n, g.querySelector("rect.hit")));
+  box.replaceChildren(g);
+}
+
+const tipEl = document.getElementById("tip");
+function tipShow(ev, t) { tipEl.textContent = t; tipEl.hidden = false; tipEl.style.left = ev.clientX + 12 + "px"; tipEl.style.top = ev.clientY + 14 + "px"; }
+function tipHide() { tipEl.hidden = true; }
+function jump(id) {
+  if (S.view !== "semua") { S.view = "semua"; render(); }
+  const key = id.startsWith("row-") ? id.slice(4) : null;
+  if (key && !S.open.has(key)) { S.open.add(key); render(); }
+  const n = document.getElementById(id);
+  if (!n) return;
+  n.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+  n.classList.remove("flash"); void n.offsetWidth; n.classList.add("flash");
+}
+
+// ---------------- laporan (markdown ringkas; teks di-escape dahulu) ----------------
+const esc = t => t.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const inline = t => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+function md(text) {
+  const out = [], L = text.split("\n");
+  for (let i = 0; i < L.length; i++) {
+    const l = L[i];
+    if (/^\s*\|/.test(l)) {
+      const rows = []; while (i < L.length && /^\s*\|/.test(L[i])) rows.push(L[i++]); i--;
+      const cells = r => r.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+      out.push("<table>" + rows.filter(r => !/^\s*\|[\s:|-]+\|\s*$/.test(r))
+        .map((r, j) => "<tr>" + cells(r).map(c => j ? `<td>${inline(c)}</td>` : `<th>${inline(c)}</th>`).join("") + "</tr>").join("") + "</table>");
+    } else if (/^```/.test(l)) {
+      const b = []; i++; while (i < L.length && !/^```/.test(L[i])) b.push(L[i++]);
+      out.push(`<pre>${esc(b.join("\n"))}</pre>`);
+    } else if (/^#{1,3} /.test(l)) { const n = l.match(/^#+/)[0].length; out.push(`<h${n}>${inline(l.slice(n + 1))}</h${n}>`); }
+    else if (/^\s*[-*] /.test(l)) out.push(`<p style="margin:2px 0 2px 16px">– ${inline(l.replace(/^\s*[-*] /, ""))}</p>`);
+    else if (l.trim()) out.push(`<p style="margin:6px 0">${inline(l)}</p>`);
+  }
+  return out.join("");
+}
+async function openReport(path) {
+  const w = document.getElementById("sheet");
+  document.getElementById("sheetTitle").textContent = path;
+  document.getElementById("sheetBody").textContent = "Memuatkan…";
+  w.hidden = false; document.getElementById("sheetClose").focus();
+  try {
+    const r = await fetch("/api/report?path=" + encodeURIComponent(path));
+    if (!r.ok) throw new Error();
+    document.getElementById("sheetBody").innerHTML = md(await r.text());  // md() meng-escape semua teks dahulu
+  } catch { document.getElementById("sheetBody").textContent = "Fail laporan tidak dijumpai. Ia mungkin telah dipadam dari folder reports."; }
+}
+const closeSheet = () => (document.getElementById("sheet").hidden = true);
+document.getElementById("sheetClose").onclick = closeSheet;
+document.getElementById("sheet").addEventListener("click", e => { if (e.target.id === "sheet") closeSheet(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
+document.getElementById("filter").addEventListener("input", e => { S.filter = e.target.value; renderIndex(); });
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => S.detail && render(), 120); });
+
+// ---------------- kemas kini langsung ----------------
+async function tick() {
+  const sync = document.getElementById("sync");
+  try {
+    S.sessions = await getJSON("/api/sessions");
+    sync.className = "sync"; sync.textContent = "dikemas kini " + new Date().toLocaleTimeString("en-GB");
+    if (!S.sel) {
+      const want = decodeURIComponent((location.hash.match(/s=([^&]+)/) || [])[1] || "");
+      const pick = S.sessions.find(v => v.id === want) || S.sessions[0];
+      if (pick) select(pick.id);
+      else document.getElementById("view").replaceChildren(h("div", { class: "placeholder" },
+        "Belum ada sesi dalam folder logs. Jalankan ", h("code", {}, ".\\secteam cve CVE-2021-44228"), " dan sesi itu akan muncul di sini."));
+    } else {
+      const cur = S.sessions.find(v => v.id === S.sel);
+      if (cur && (cur.status === "berjalan" || !S.detail || S.detail.summary.status !== cur.status)) load();
+    }
+    renderIndex();
+  } catch { sync.className = "sync off"; sync.textContent = "pelayan tidak menjawab"; }
+}
+tick();
+setInterval(tick, 2500);
+</script>
+</body>
+</html>

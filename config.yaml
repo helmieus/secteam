@@ -24,6 +24,8 @@ models:
 orchestration:
   max_steps: 8              # bilangan maksimum tugasan yang supervisor boleh agih
   max_tool_rounds: 12       # bilangan maksimum pusingan alat setiap agent setiap tugasan
+  max_calls_per_agent: 2    # pengawal gelung: had tugasan untuk setiap pakar
+  max_parallel_tool_calls: 4  # had panggilan alat serentak setiap giliran model (elak ribut panggilan)
   max_tool_output_chars: 6000
 
 report_language: "Bahasa Melayu Malaysia (BUKAN Bahasa Indonesia: guna 'keselamatan' bukan 'keamanan', 'boleh' bukan 'dapat', 'peranti' bukan 'perangkat'). Istilah teknikal boleh kekal dalam English"

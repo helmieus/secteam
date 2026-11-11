@@ -83,26 +83,43 @@ def file_inspect(path: str) -> str:
     ])
 
 
-def _decode_one(data: str, enc: str) -> str:
+def _decode_bytes(data: str, enc: str) -> bytes:
     s = data.strip()
     if enc == "base64":
-        return base64.b64decode(s + "=" * (-len(s) % 4)).decode("utf-8", "replace")
+        if not re.fullmatch(r"[A-Za-z0-9+/=\s_-]+", s):
+            raise ValueError("bukan base64")
+        s = s.replace("-", "+").replace("_", "/")
+        return base64.b64decode(s + "=" * (-len(s) % 4), validate=False)
     if enc == "base32":
-        return base64.b32decode(s + "=" * (-len(s) % 8)).decode("utf-8", "replace")
+        return base64.b32decode(s.upper() + "=" * (-len(s) % 8))
     if enc == "base85":
-        return base64.b85decode(s).decode("utf-8", "replace")
+        return base64.b85decode(s)
     if enc == "hex":
-        return binascii.unhexlify(re.sub(r"[^0-9a-fA-F]", "", s)).decode("utf-8", "replace")
+        h = re.sub(r"(0x|\\x|[\s:,])", "", s)
+        if not re.fullmatch(r"(?:[0-9a-fA-F]{2})+", h):
+            raise ValueError("bukan hex")
+        return binascii.unhexlify(h)
     if enc == "url":
-        return urllib.parse.unquote(s)
+        if "%" not in s:
+            raise ValueError("bukan url-encoded")
+        return urllib.parse.unquote_to_bytes(s)
     if enc == "rot13":
-        return codecs.decode(s, "rot13")
+        return codecs.decode(s, "rot13").encode()
     if enc == "binary":
-        bits = re.sub(r"[^01]", "", s)
-        return bytes(int(bits[i:i + 8], 2) for i in range(0, len(bits) - 7, 8)).decode("utf-8", "replace")
+        bits = re.sub(r"\s", "", s)
+        if not re.fullmatch(r"[01]+", bits) or len(bits) % 8:
+            raise ValueError("bukan binari")
+        return bytes(int(bits[i:i + 8], 2) for i in range(0, len(bits), 8))
     if enc == "decimal":
-        return bytes(int(x) for x in re.findall(r"\d+", s)).decode("utf-8", "replace")
+        nums = re.findall(r"\d+", s)
+        if not nums or any(int(x) > 255 for x in nums):
+            raise ValueError("bukan senarai desimal bait")
+        return bytes(int(x) for x in nums)
     raise ValueError(f"encoding tidak disokong: {enc}")
+
+
+def _decode_one(data: str, enc: str) -> str:
+    return _decode_bytes(data, enc).decode("utf-8", "replace")
 
 
 ENCODINGS = ("base64", "base32", "base85", "hex", "url", "rot13", "binary", "decimal")
@@ -157,6 +174,124 @@ def decode(data: str, encoding: str = "auto") -> str:
         lines.append(f"\nRantaian lapisan: {' -> '.join(chain)}\nHasil akhir: {cur[:400]}")
     if re.fullmatch(r"(?:[0-9a-fA-F]{2})+", cur.strip()):
         lines.append("Hasil akhir ialah hex yang tidak boleh dibaca terus -> cuba xor_bruteforce pada hex ini.")
+    return "\n".join(lines)
+
+
+def _is_printable(b: bytes) -> bool:
+    return bool(b) and sum(32 <= c < 127 or c in (9, 10, 13) for c in b) / len(b) >= 0.95
+
+
+def _expand(node: bytes) -> list[tuple[str, bytes]]:
+    """Semua transformasi satu langkah daripada satu nod."""
+    out = []
+    if _is_printable(node):
+        s = node.decode("latin-1")
+        for enc in ENCODINGS:
+            try:
+                b = _decode_bytes(s, enc)
+            except Exception:  # noqa: BLE001
+                continue
+            if b and b != node:
+                out.append((enc, b))
+    # XOR satu bait: ambil 2 kunci terbaik jika hasilnya boleh cetak
+    best = sorted(((_english_score(bytes(c ^ k for c in node)), k) for k in range(1, 256)), reverse=True)[:2]
+    for _, k in best:
+        dec = bytes(c ^ k for c in node)
+        if _is_printable(dec):
+            out.append((f"xor(0x{k:02x})", dec))
+    return out
+
+
+KNOWN_PREFIXES = {
+    b"flag", b"ctf", b"picoctf", b"htb", b"thm", b"ductf", b"uiuctf", b"csictf", b"hacktheflag",
+    b"flg", b"key", b"secret", b"ictf", b"wgmy", b"lagctf", b"sherpa",
+}
+FLAG_BODY_RE = re.compile(rb"^[A-Za-z0-9_\-!@#$%.?+]{3,}$")
+
+
+def _flag_quality(flag: bytes, chain: list[str]) -> float:
+    """Skor keyakinan calon flag: awalan dikenali, isi bersih, mudah dibaca, rantaian pendek."""
+    prefix, _, body = flag.partition(b"{")
+    body = body[:-1]
+    score = 0.0
+    if prefix.lower() in KNOWN_PREFIXES:
+        score += 3
+    elif prefix.isalpha() and prefix.islower() and len(prefix) >= 3:
+        score += 0.5
+    if FLAG_BODY_RE.match(body):
+        score += 2
+    else:
+        score -= 2
+    letters = sum(chr(c).isalpha() for c in body) / max(len(body), 1)
+    score += letters + _english_score(body) / 3
+    score -= 0.3 * len(chain)
+    return score
+
+
+def _roots_from(data: str, path: str) -> list[bytes]:
+    roots: list[bytes] = []
+    if path:
+        raw = _resolve_file(path).read_bytes()
+        roots.append(raw.strip())
+        if _is_printable(raw):  # fail teks: setiap token panjang juga calon
+            roots += [t for t in raw.split() if len(t) >= 8]
+    if data:
+        roots.append(data.strip().encode("latin-1", "replace"))
+    seen, uniq = set(), []
+    for r in roots:
+        if r and r not in seen:
+            seen.add(r)
+            uniq.append(r)
+    return uniq
+
+
+@tool
+@guarded
+def auto_solve(path: str = "", data: str = "", max_depth: int = 5) -> str:
+    """PREFERRED first step for encoding/crypto CTF challenges. Reads the challenge file directly
+    (path relative to the CTF files dir) and/or raw data, then searches every chain of decodings
+    (base64, base32, base85, hex, url, binary, decimal, rot13) and single-byte XOR, up to max_depth
+    layers, reporting any flag-like string with the exact transformation chain. Pass the file path
+    instead of copying data yourself."""
+    if not path and not data:
+        raise ValueError("Beri 'path' (fail cabaran) atau 'data'.")
+    max_depth = max(1, min(max_depth, 6))
+    roots = _roots_from(data, path)
+    queue = [(r, []) for r in roots]
+    seen = set(roots)
+    flags: dict[bytes, list[str]] = {}
+    readable: list[tuple[float, list[str], bytes]] = []
+    expanded = 0
+    while queue and expanded < 400:
+        node, chain = queue.pop(0)
+        expanded += 1
+        for m in FLAG_RE.finditer(node):
+            flags.setdefault(m.group(0), chain)
+        if chain and _is_printable(node):
+            readable.append((_english_score(node), chain, node))
+        if len(chain) >= max_depth:
+            continue
+        for name, nxt in _expand(node):
+            if nxt not in seen and len(nxt) >= 4:
+                seen.add(nxt)
+                queue.append((nxt, chain + [name]))
+    ranked = sorted(((_flag_quality(f, c), f, c) for f, c in flags.items()), key=lambda x: x[0], reverse=True)
+    ranked = [r for r in ranked if r[0] >= 2.0]
+    if ranked:
+        q, best, chain = ranked[0]
+        lines = [
+            f"FLAG DIJUMPAI: {best.decode('latin-1')}",
+            f"  rantaian: {' -> '.join(chain) or '(teks asal)'}  (skor keyakinan {q:.1f})",
+        ]
+        if len(ranked) > 1:
+            lines.append("Calon lain (keyakinan lebih rendah):")
+            lines += [f"  {f.decode('latin-1')}  <- {' -> '.join(c)}  ({s:.1f})" for s, f, c in ranked[1:4]]
+        return "\n".join(lines)
+    readable.sort(key=lambda x: x[0], reverse=True)
+    lines = [f"Tiada corak flag dijumpai ({expanded} nod diperiksa). Calon paling boleh dibaca:"]
+    for score, chain, node in readable[:6]:
+        lines.append(f"  [{' -> '.join(chain)}] skor {score:.2f}: {node[:150].decode('latin-1')}")
+    lines.append("Cadangan: cuba run_python untuk cipher lain (vigenere, xor berbilang bait, RSA, ...).")
     return "\n".join(lines)
 
 
@@ -229,4 +364,4 @@ def run_python(code: str) -> str:
     return f"exit={p.returncode}\n[stdout]\n{p.stdout}\n[stderr]\n{p.stderr[-2000:]}"
 
 
-CTF_TOOLS = [list_ctf_files, file_inspect, decode, caesar_bruteforce, xor_bruteforce, hash_identify, run_python]
+CTF_TOOLS = [auto_solve, list_ctf_files, file_inspect, decode, caesar_bruteforce, xor_bruteforce, hash_identify, run_python]

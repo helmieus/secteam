@@ -12,7 +12,7 @@ from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from .config import model_for
-from .tools import CTF_TOOLS, INTEL_TOOLS, RECON_TOOLS, SAST_TOOLS
+from .tools import CTF_TOOLS, INTEL_TOOLS, RECON_TOOLS, RESEARCH_TOOLS, SAST_TOOLS
 from .tools.intel import osv_lookup
 from .ui import console
 
@@ -41,28 +41,53 @@ Map service versions to likely CVEs as HYPOTHESES for the threat_intel specialis
         "description": "Source code security audit (SAST): semgrep, bandit, manual review of risky code, dependency CVEs.",
         "tools": [*SAST_TOOLS, osv_lookup],
         "prompt": """You are the Code Security Auditor.
-Methodology: list_files to understand the project -> run_semgrep (and run_bandit for Python) ->
-search_code for hot spots (auth, SQL, command exec, deserialization, file paths, SSRF, templates,
-hardcoded secrets, weak crypto) -> read_file to VERIFY each candidate in context.
-Discard false positives explicitly. Check dependency manifests (requirements.txt, package.json, ...)
-with osv_lookup for pinned versions. Cite file:line for every finding.""",
+Step 1: call scan_code ONCE with NO arguments (it scans the whole audit root: semgrep + bandit +
+dependency CVE check, de-duplicated). All paths are RELATIVE to the audit root.
+Do NOT also call run_semgrep / run_bandit / list_files - scan_code already covers them.
+Step 2: for HIGH findings, optionally read_file around the line to confirm user input reaches it
+(e.g. read_file(path, start_line=line-10, end_line=line+5)). Mark a finding false positive only if the code
+clearly shows it is safe.
+Step 3: optionally search_code for issues scanners miss (auth checks, IDOR, business logic).
+Then STOP and write the final summary: one entry per scan_code item (C1, C2, ... and D1, D2, ...)
+with severity, vulnerability class, file:line, the code line as evidence, impact, and the fix.
+For the fix, COPY the "Pembaikan:" line from scan_code verbatim - do not invent your own remediation.
+For dependency impact, describe only the vulnerability types listed in "Jenis:" - do not exaggerate.
+Copy file names, line numbers, CVE IDs and versions EXACTLY from tool output.""",
+    },
+    "researcher": {
+        "description": "General web research for open questions: what a tool/technique/concept/product IS, "
+                       "how it works, current info, docs. Use this for anything that is NOT a specific CVE lookup.",
+        "tools": RESEARCH_TOOLS,
+        "prompt": """You are the Research analyst. You answer open-ended questions using web_search.
+Call web_search with a focused query (refine and search again if the first results are thin).
+Answer ONLY from the returned results. After each fact put the source number like [1] or [2], and end with
+a short "Sumber:" list of the [n] URLs you actually used (copy them verbatim from the results).
+If the results do not actually answer the question, say so plainly - do NOT fall back to memory, and NEVER
+invent CVEs, URLs, versions or facts. Keep it concise and factual.""",
     },
     "threat_intel": {
-        "description": "Threat intelligence: CVE details, CVSS/EPSS/CISA-KEV prioritisation, package vulnerabilities, recent exploited CVEs.",
+        "description": "CVE threat intel ONLY: details for a specific CVE id, CVSS/EPSS/CISA-KEV, package "
+                       "vulnerabilities (OSV), recently exploited CVEs. NOT for general 'what is X' questions.",
         "tools": INTEL_TOOLS,
         "prompt": """You are the Threat Intelligence analyst.
 Use cve_lookup / cve_search / osv_lookup / kev_recent. Prioritise by: in CISA KEV > high EPSS > CVSS.
 State affected and fixed versions when known, and concrete mitigation/patch guidance.
-Only cite CVE IDs that appear in tool output.""",
+ONLY look up CVE IDs, products, packages and versions that appear in your assignment or in teammates'
+findings - never invent package names or versions. Make at most 4 tool calls per turn and never repeat
+a call. Only cite CVE IDs that appear in tool output.""",
     },
     "ctf_solver": {
         "description": "CTF challenge solving: crypto, encoding, forensics files, scripting; finds the flag.",
         "tools": CTF_TOOLS,
         "prompt": """You are the CTF Solver.
-First identify the category (crypto, encoding, forensics, web, rev, misc). Inspect files with
-list_ctf_files / file_inspect. Try cheap transformations first (decode auto, caesar, xor), then
-write focused Python with run_python (print intermediate values). Explain the reasoning chain and
-report the flag exactly as recovered. Never guess a flag.""",
+Step 1: list_ctf_files, then call auto_solve with the file PATH (it reads the file itself and tries all
+decoding/XOR chains). If auto_solve reports "FLAG DIJUMPAI", that is the answer - report it verbatim.
+Otherwise inspect with file_inspect, try caesar_bruteforce / hash_identify, then write focused Python
+with run_python that READS THE FILE BY ITS ABSOLUTE PATH (print intermediate values).
+CRITICAL: never retype, transcribe or "clean up" data yourself between tools - you will corrupt it.
+Pass file paths, or copy tool output exactly. A flag is only valid if it appears verbatim in a tool
+output. If no tool output contains a flag, say "flag not found" and describe what was tried.
+NEVER guess, complete or repair a partial flag.""",
     },
 }
 
@@ -125,15 +150,41 @@ def recover_text_tool_calls(msg: AIMessage, tool_names: set[str]) -> AIMessage:
     return AIMessage(content="", tool_calls=calls, id=msg.id)
 
 
+def _call_key(tc: dict) -> str:
+    return tc["name"] + json.dumps(tc.get("args", {}), sort_keys=True).lower()
+
+
 def build_specialist(cfg: dict, name: str):
     spec = SPECIALISTS[name]
-    llm = make_llm(cfg, name).bind_tools(spec["tools"])
+    base_llm = make_llm(cfg, name)
+    llm = base_llm.bind_tools(spec["tools"])
     system = SystemMessage(spec["prompt"] + "\n" + COMMON_RULES)
     tool_names = {t.name for t in spec["tools"]}
+    max_parallel = cfg.get("orchestration", {}).get("max_parallel_tool_calls", 4)
 
     def call_model(state: MessagesState):
-        resp = llm.invoke([system, *state["messages"]])
-        return {"messages": [recover_text_tool_calls(resp, tool_names)]}
+        msgs = [system, *state["messages"]]
+        resp = recover_text_tool_calls(llm.invoke(msgs), tool_names)
+        if not resp.tool_calls:
+            return {"messages": [resp]}
+        # buang panggilan yang sudah dibuat sebelum ini / pendua dalam giliran yang sama, dan hadkan bilangan
+        done = {_call_key(tc) for m in state["messages"] if isinstance(m, AIMessage) for tc in m.tool_calls}
+        fresh, seen = [], set()
+        for tc in resp.tool_calls:
+            k = _call_key(tc)
+            if k not in done and k not in seen:
+                seen.add(k)
+                fresh.append(tc)
+        dropped = len(resp.tool_calls) - len(fresh[:max_parallel])
+        if dropped:
+            console.print(f"    [dim]({dropped} panggilan alat pendua/berlebihan diabaikan)[/]")
+        if fresh:
+            return {"messages": [AIMessage(content=resp.content, tool_calls=fresh[:max_parallel], id=resp.id)]}
+        # semua panggilan ialah ulangan -> paksa model menulis ringkasan akhir tanpa alat
+        final = base_llm.invoke(msgs + [HumanMessage(
+            "You already have the results of these tool calls above. Do NOT call tools again. "
+            "Write your final summary now, using only facts from the tool outputs.")])
+        return {"messages": [AIMessage(content=clean_text(final.content), id=resp.id)]}
 
     g = StateGraph(MessagesState)
     g.add_node("model", call_model)
@@ -171,10 +222,32 @@ def run_specialist(subgraph, agent: str, message: str, max_rounds: int) -> str:
     except GraphRecursionError:
         note = "\n\n[Nota: had pusingan alat dicapai; hasil mungkin tidak lengkap.]"
 
+    tool_text = "\n".join(str(m.content) for m in msgs if isinstance(m, ToolMessage))
     for m in reversed(msgs):
         if isinstance(m, AIMessage):
             text = clean_text(m.content)
             if text:
-                return text + note
+                return text + note + verify_claims(text, tool_text)
     tool_out = [clean_text(m.content)[:1500] for m in msgs if isinstance(m, ToolMessage)][-3:]
     return "Agent tidak menghasilkan ringkasan. Output alat terakhir:\n" + "\n---\n".join(tool_out) + note
+
+
+FLAG_CLAIM_RE = re.compile(r"[A-Za-z0-9_]{1,16}\{[^\s{}]{1,120}\}")
+CVE_CLAIM_RE = re.compile(r"CVE-\d{4}-\d{4,}", re.I)
+
+
+def verify_claims(text: str, tool_text: str) -> str:
+    """Semak setiap flag / CVE yang didakwa agent benar-benar muncul dalam output alat.
+    Model kecil kerap merosakkan data semasa menyalin atau mereka-reka jawapan."""
+    lines = []
+    for f in dict.fromkeys(FLAG_CLAIM_RE.findall(text)):
+        if f in tool_text:
+            lines.append(f"[DISAHKAN] Flag '{f}' muncul dalam output alat.")
+        else:
+            lines.append(f"[TIDAK DISAHKAN] Flag '{f}' TIADA dalam mana-mana output alat - kemungkinan "
+                         f"rekaan/salinan rosak oleh model. JANGAN laporkan sebagai jawapan.")
+    upper_tools = tool_text.upper()
+    bad_cves = [c for c in dict.fromkeys(c.upper() for c in CVE_CLAIM_RE.findall(text)) if c not in upper_tools]
+    if bad_cves:
+        lines.append(f"[TIDAK DISAHKAN] CVE tiada dalam output alat: {', '.join(bad_cves)} - mungkin rekaan.")
+    return ("\n\n--- Semakan bukti automatik ---\n" + "\n".join(lines)) if lines else ""

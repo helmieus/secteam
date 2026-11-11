@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import sys
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -39,6 +40,7 @@ def _setup(cfg_path: Path, engagement: Optional[Path], code: Optional[Path], fil
     RT.sandbox_dir = Path(paths.get("sandbox", "workspace/sandbox")).resolve()
     RT.max_tool_output = cfg.get("orchestration", {}).get("max_tool_output_chars", 6000)
     RT.auto_approve = auto_approve
+    RT.audit.session = f"{dt.datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:4]}"
 
     if engagement:
         eng = Engagement.load(engagement)
@@ -58,7 +60,9 @@ def _setup(cfg_path: Path, engagement: Optional[Path], code: Optional[Path], fil
     if auto_approve and RT.engagement:
         console.print("[bold red]AMARAN:[/] --auto-approve aktif; scan akan berjalan tanpa pengesahan.")
     RT.audit.log("session_start", engagement=getattr(RT.engagement, "path", None),
-                 code=str(RT.code_root), files=str(RT.files_root), auto_approve=auto_approve)
+                 engagement_name=getattr(RT.engagement, "name", None),
+                 code=str(RT.code_root) if RT.code_root else None,
+                 files=str(RT.files_root) if RT.files_root else None, auto_approve=auto_approve)
     return cfg
 
 
@@ -105,14 +109,15 @@ def _preflight_models(cfg: dict) -> None:
             models[role] = default
 
 
-def _execute(task: str, cfg: dict, max_steps: Optional[int]) -> None:
+def _execute(task: str, cfg: dict, max_steps: Optional[int], members: Optional[list[str]] = None) -> None:
     from .graph import available_specialists, build_graph  # import lewat: lebih pantas untuk --help
 
     _preflight_models(cfg)
     if max_steps:
         cfg.setdefault("orchestration", {})["max_steps"] = max_steps
-    members = available_specialists()
+    members = members or available_specialists()
     console.print(f"[bold]Pasukan:[/] {', '.join(members)}  |  [bold]Tugasan:[/] {task}")
+    RT.audit.log("task", task=task, members=members)
     graph = build_graph(cfg, members)
     state = {"task": task, "context": _context(), "findings": [], "next": "",
              "instruction": "", "steps": 0, "report": ""}
@@ -133,7 +138,8 @@ def _execute(task: str, cfg: dict, max_steps: Optional[int]) -> None:
         json.dumps({"task": task, "context": state["context"], "findings": findings}, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    RT.audit.log("session_end", report=str(out_dir / f"{stem}.md"))
+    RT.audit.log("session_end", report=str(out_dir / f"{stem}.md"),
+                 findings_file=str(out_dir / f"{stem}-findings.json"))
     console.rule("[bold green]Selesai[/]")
     console.print(f"Laporan: [bold]{out_dir / (stem + '.md')}[/]\nBukti mentah: {out_dir / (stem + '-findings.json')}")
 
@@ -155,7 +161,9 @@ def audit(path: Path = typer.Argument(..., help="Direktori kod sumber."),
     cfg = _setup(config, None, path, None, False)
     task = ("Perform a thorough security code audit of the provided source code. Find and verify "
             "vulnerabilities, check dependencies for known CVEs, and prioritise by severity.")
-    _execute(task + (f" Focus: {focus}" if focus else ""), cfg, max_steps)
+    # scan_code sudah merangkumi semakan CVE dependency (OSV), jadi audit hanya perlukan code_auditor.
+    # Gunakan 'secteam run ... -c <dir>' untuk pasukan penuh.
+    _execute(task + (f" Focus: {focus}" if focus else ""), cfg, max_steps or 3, members=["code_auditor"])
 
 
 @app.command()
@@ -164,7 +172,15 @@ def cve(query: str = typer.Argument(..., help="ID CVE, produk, atau soalan threa
     """Analisis threat intel untuk CVE / produk."""
     cfg = _setup(config, None, None, None, False)
     _execute(f"Threat intelligence analysis: {query}. Assess severity, exploitation status and mitigation.",
-             cfg, 3)
+             cfg, 3, members=["threat_intel"])
+
+
+@app.command()
+def research(query: str = typer.Argument(..., help="Soalan maklumat am (cth. 'apa itu php2shell')."),
+             config: Path = CfgOpt):
+    """Cari maklumat di internet dengan sumber (bukan CVE: tool, teknik, konsep, produk)."""
+    cfg = _setup(config, None, None, None, False)
+    _execute(f"Research this and report factually with sources: {query}", cfg, 3, members=["researcher"])
 
 
 @app.command()
@@ -172,7 +188,7 @@ def ctf(challenge: str = typer.Argument(..., help="Penerangan cabaran CTF (boleh
         files: Optional[Path] = FilesOpt, auto_approve: bool = AutoOpt, config: Path = CfgOpt):
     """Selesaikan cabaran CTF."""
     cfg = _setup(config, None, None, files, auto_approve)
-    _execute(f"Solve this CTF challenge and recover the flag:\n{challenge}", cfg, 4)
+    _execute(f"Solve this CTF challenge and recover the flag:\n{challenge}", cfg, 4, members=["ctf_solver"])
 
 
 @app.command("check-scope")
@@ -186,6 +202,34 @@ def check_scope(engagement: Path = typer.Argument(...), target: str = typer.Argu
     except ScopeError as e:
         console.print(f"[red]DITOLAK[/] {e}")
         raise typer.Exit(1)
+
+
+@app.command()
+def dashboard(port: int = typer.Option(8765, help="Port tempatan."),
+              theme: str = typer.Option("trace", help="Tema paparan: trace | springfield (gaya kartun)."),
+              open_browser: bool = typer.Option(True, "--open/--no-open", help="Buka pelayar secara automatik."),
+              config: Path = CfgOpt):
+    """Dashboard web untuk melihat aktiviti setiap agent (hanya di 127.0.0.1)."""
+    import webbrowser
+
+    from .dashboard import serve
+
+    theme = theme.strip().lower()
+    if theme not in ("trace", "springfield"):
+        raise typer.BadParameter("theme mesti 'trace' atau 'springfield'")
+    cfg = load_config(config)
+    paths = cfg.get("paths", {})
+    server = serve(port, Path(paths.get("logs", "logs")), Path(paths.get("reports", "reports")), theme)
+    url = f"http://127.0.0.1:{port}/"
+    console.print(f"[bold green]Dashboard:[/] {url}   (Ctrl+C untuk berhenti)")
+    if open_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        console.print("Dashboard dihentikan.")
+    finally:
+        server.server_close()
 
 
 @app.command()

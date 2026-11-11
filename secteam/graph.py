@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import operator
 import re
+import time
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -34,16 +35,27 @@ __MEMBERS__
 Rules:
 - Assign ONE member at a time with a concrete, specific instruction (targets, files, CVE IDs, what to look for).
 - Build on findings so far; never repeat an assignment that was already done.
-- Hand off between specialists when useful (e.g. service versions from recon -> threat_intel to verify CVEs;
-  dependency versions from code_auditor -> threat_intel).
+- Hand off between specialists only when it adds NEW information (e.g. service versions from recon ->
+  threat_intel to verify CVEs).
+- threat_intel is ONLY for a specific CVE id / product+version / package+version. Never send it generic
+  vulnerability classes ("sql injection") or open questions ("what is X", "research Y", "how does Z work").
+- For any open-ended "what is / research / find info about / how does it work" question about a tool,
+  technique, concept or product (e.g. "php2shell", "what is SSTI"), assign the RESEARCHER, not threat_intel.
+- code_auditor's scan already includes dependency CVEs. Once code_auditor has reported findings with
+  file:line evidence, the audit is DONE -> choose reporter. Each member may be used at most twice.
 - Only assign members listed above.
+- Findings may end with an automatic evidence check. A flag/CVE marked [TIDAK DISAHKAN] is NOT solved:
+  either assign another attempt (e.g. "use auto_solve / run_python reading the file by path") or go to reporter.
+  Never treat an unverified claim as the answer.
 
 Respond with ONLY a JSON object:
 {"next": "<member name>", "instruction": "<specific instruction>", "reason": "<one short sentence>"}"""
 
 REPORTER_PROMPT = """You are the report writer of a security research team. Write the final report in __LANG__,
 in Markdown. Use ONLY information present in the findings; do not invent anything. Keep tool-verified
-facts separate from hypotheses.
+facts separate from hypotheses. Findings end with an automatic evidence check: anything marked
+[TIDAK DISAHKAN] must NOT be presented as an answer or confirmed finding - list it only under caveats
+as unverified. Only items marked [DISAHKAN] (or quoted from tool output) may be stated as results.
 
 Structure:
 # <Report title>
@@ -81,8 +93,27 @@ def _parse_decision(text: str, valid: set[str]) -> dict:
     return {"next": nxt, "instruction": str(d.get("instruction", "")), "reason": str(d.get("reason", ""))}
 
 
+def _similar(a: str, b: str) -> float:
+    wa, wb = set(re.findall(r"\w+", a.lower())), set(re.findall(r"\w+", b.lower()))
+    return len(wa & wb) / max(len(wa | wb), 1)
+
+
+def loop_guard(decision: dict, findings: list[dict], max_per_agent: int) -> str | None:
+    """Pulangkan sebab jika keputusan Lead ialah ulangan (agent terlalu kerap / arahan hampir sama)."""
+    nxt = decision["next"]
+    if nxt == "reporter":
+        return None
+    prev = [f["instruction"] for f in findings if f["agent"] == nxt]
+    if len(prev) >= max_per_agent:
+        return f"{nxt} sudah dipanggil {len(prev)} kali (had {max_per_agent})"
+    for p in prev:
+        if _similar(decision["instruction"], p) >= 0.6:
+            return f"arahan kepada {nxt} hampir sama dengan tugasan terdahulu"
+    return None
+
+
 def available_specialists() -> list[str]:
-    names = ["threat_intel", "ctf_solver"]
+    names = ["researcher", "threat_intel", "ctf_solver"]
     if RT.engagement is not None:
         names.insert(0, "recon")
     if RT.code_root is not None:
@@ -95,6 +126,7 @@ def build_graph(cfg: dict, members: list[str] | None = None):
     orch = cfg.get("orchestration", {})
     max_steps = orch.get("max_steps", 8)
     max_rounds = orch.get("max_tool_rounds", 12)
+    max_per_agent = orch.get("max_calls_per_agent", 2)
     lang = cfg.get("report_language", "Bahasa Melayu")
 
     sup_llm = make_llm(cfg, "supervisor", json_mode=True)
@@ -110,10 +142,17 @@ def build_graph(cfg: dict, members: list[str] | None = None):
         human = HumanMessage(
             f"TASK:\n{state['task']}\n\nCONTEXT:\n{state['context']}\n\n"
             f"FINDINGS SO FAR ({len(state['findings'])} steps, {max_steps - state['steps']} remaining):\n"
-            f"{_summarise_findings(state['findings'], 1500)}"
+            f"{_summarise_findings(state['findings'], 2500)}"
         )
+        t0 = time.perf_counter()
         d = _parse_decision(sup_llm.invoke([sup_system, human]).content, valid)
-        RT.audit.log("supervisor_decision", **d)
+        ms = int((time.perf_counter() - t0) * 1000)
+        why = loop_guard(d, state["findings"], max_per_agent)
+        if why:
+            console.print(f"[yellow]Pengawal gelung: {why} -> reporter[/]")
+            RT.audit.log("loop_guard", reason=why, blocked=d)
+            d = {"next": "reporter", "instruction": "", "reason": f"loop guard: {why}"}
+        RT.audit.log("supervisor_decision", step=state["steps"] + 1, ms=ms, **d)
         console.rule(f"[bold cyan]Lead -> {d['next']}[/]")
         if d["instruction"]:
             console.print(f"[cyan]Arahan:[/] {d['instruction']}\n[dim]Sebab: {d['reason']}[/]")
@@ -126,22 +165,33 @@ def build_graph(cfg: dict, members: list[str] | None = None):
             msg = (
                 f"Overall task: {state['task']}\n\nContext:\n{state['context']}\n\n"
                 f"Your assignment from the lead:\n{state['instruction'] or state['task']}\n\n"
-                f"Relevant findings from teammates:\n{_summarise_findings(state['findings'], 800)}"
+                f"Relevant findings from teammates:\n{_summarise_findings(state['findings'], 3500)}"
             )
-            result = run_specialist(sub, name, msg, max_rounds)
-            RT.audit.log("specialist_result", agent=name, chars=len(result))
+            RT.audit.agent = name
+            RT.audit.log("specialist_start", instruction=state["instruction"])
+            try:
+                result = run_specialist(sub, name, msg, max_rounds)
+            finally:
+                RT.audit.agent = None
+            RT.audit.log("specialist_result", agent=name, chars=len(result), result=result[:8000],
+                         unverified="[TIDAK DISAHKAN]" in result)
             return {"findings": [{"agent": name, "instruction": state["instruction"], "result": result}]}
 
         return node
 
     def reporter(state: TeamState):
         console.rule("[bold green]Menulis laporan[/]")
+        RT.audit.log("reporter_start", agent="reporter")
+        t0 = time.perf_counter()
         system = SystemMessage(REPORTER_PROMPT.replace("__LANG__", lang))
         human = HumanMessage(
             f"TASK:\n{state['task']}\n\nCONTEXT:\n{state['context']}\n\n"
             f"FINDINGS:\n{_summarise_findings(state['findings'], 4000)}"
         )
-        return {"report": clean_text(rep_llm.invoke([system, human]).content)}
+        report = clean_text(rep_llm.invoke([system, human]).content)
+        RT.audit.log("reporter_done", agent="reporter", chars=len(report),
+                     ms=int((time.perf_counter() - t0) * 1000))
+        return {"report": report}
 
     g = StateGraph(TeamState)
     g.add_node("supervisor", supervisor)

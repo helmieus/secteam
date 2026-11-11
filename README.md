@@ -5,18 +5,18 @@ mengagih kerja kepada pakar, pakar guna alat sebenar, dan reporter tulis laporan
 
 ```
                  ┌────────────────────┐
-  tugasan ─────► │ Supervisor (Lead)  │◄──────────────┐
-                 └─────────┬──────────┘               │
-       ┌──────────────┬────┴─────────┬──────────────┐ │ hasil
-       ▼              ▼              ▼              ▼ │
-    recon       code_auditor    threat_intel    ctf_solver
-  dns/rdap,      semgrep,        NVD, EPSS,      decode, xor,
-  http_probe,    bandit,         CISA KEV,       file_inspect,
-  nmap, nuclei   read/search,    OSV             run_python
-                 OSV
-       └──────────────┴──────┬───────┴──────────────┘
-                             ▼
-                        Reporter ──► reports/*.md + *-findings.json
+  tugasan ─────► │ Supervisor (Lead)  │◄───────────────────────────┐
+                 └─────────┬──────────┘                            │
+   ┌────────────┬──────────┼───────────┬────────────┬───────────┐ │ hasil
+   ▼            ▼          ▼           ▼            ▼           ▼ │
+ recon    code_auditor  threat_intel  researcher  ctf_solver     │
+ dns/rdap,  semgrep,     NVD, EPSS,    carian web  decode, xor,   │
+ http_probe,bandit,      CISA KEV,     (Tavily/    file_inspect,  │
+ nmap,      read/search, OSV           Brave/DDG)  run_python     │
+ nuclei     OSV                        + sumber                   │
+   └────────────┴──────────┬───────────┴────────────┴───────────┘ │
+                           ▼                                       │
+                      Reporter ──► reports/*.md + *-findings.json ─┘
 ```
 
 Setiap pakar ialah subgraph ReAct (model ↔ alat) dengan had pusingan sendiri.
@@ -68,9 +68,13 @@ Pilihan: tetapkan `$env:NVD_API_KEY` (percuma dari nvd.nist.gov) supaya had kada
 ## Penggunaan
 
 ```powershell
-# Threat intel
+# Threat intel (CVE spesifik, dari NVD/EPSS/KEV)
 secteam cve CVE-2024-3400
 secteam run "Apakah CVE yang dieksploitasi aktif bulan ini yang melibatkan VPN appliance?"
+
+# Research maklumat am (carian web + sumber) - untuk soalan "apa itu X", bukan CVE
+secteam research "apa itu php2shell"
+secteam research "macam mana SSTI dieksploitasi dalam Jinja2"
 
 # Code audit
 secteam audit C:\projek\webapp --focus "authentication dan SQL injection"
@@ -89,6 +93,34 @@ secteam run "Audit kod ini dan sahkan sama ada servis di 192.168.56.101 terdedah
 ```
 
 Output: `reports\<masa>-<tugasan>.md` (laporan) dan `-findings.json` (bukti mentah setiap pakar).
+
+### Carian web (pakar `researcher`)
+
+`secteam research` (dan `run` untuk soalan "apa itu X") guna carian web dan menjawab **hanya dari hasil
+carian, dengan URL sumber sebenar** dalam laporan. Pembekal dipilih automatik ikut kunci dalam environment:
+
+- **DuckDuckGo** — lalai, tiada kunci, terus jalan (kadang kena had kadar bila kerap).
+- **Tavily** — lebih dipercayai, percuma ~1000/bulan: `setx TAVILY_API_KEY "tvly-..."` (buka terminal baru selepas itu).
+- **Brave** — percuma ~2000/bulan: `setx BRAVE_API_KEY "BSA-..."`.
+
+Researcher melaporkan apa yang ada di web; kualiti bergantung pada sumber. Sentiasa klik URL sumber dalam
+laporan untuk sahkan — ini BUKAN threat_intel (yang guna NVD untuk CVE spesifik).
+
+Tanpa aktifkan venv: guna pelancar `.\secteam <arahan>` dari folder projek (fail `secteam.cmd`).
+
+## Dashboard aktiviti agent
+
+```powershell
+.\secteam dashboard            # buka http://127.0.0.1:8765 dalam pelayar
+```
+
+- **Senarai sesi**: setiap run, dengan status (selesai / berjalan / terhenti), tempoh, bilangan alat, amaran.
+- **Garis masa**: swimlane Lead / setiap pakar / Reporter; bar nipis = panggilan alat (merah = ralat/ditolak).
+  Klik bar untuk lompat ke langkah tersebut.
+- **Langkah demi langkah**: keputusan Lead (arahan + sebab) → setiap panggilan alat (klik untuk lihat argumen
+  & output) → ringkasan agent dengan tanda **[DISAHKAN]** / **[TIDAK DISAHKAN]**.
+- Dikemas kini secara langsung setiap 2.5 saat semasa run berjalan; biarkan ia terbuka dalam tab lain.
+- Hanya bind ke `127.0.0.1` (log mengandungi data engagement). Sumber data: `logs\audit-*.jsonl`.
 
 ## Konfigurasi (`config.yaml`)
 

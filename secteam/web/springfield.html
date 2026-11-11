@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>secteam Springfield</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Fredoka:wght@400;500;600;700&display=swap">
+<style>
+/* Tema "Springfield": satu dunia visual terang (langit biru berawan + panel kuning + garisan hitam
+   tebal + bayang kartun keras). Vibe kartun klasik; tiada watak/logo berhak cipta - cuma warna, awan,
+   outline & fon. Data sama dengan tema 'trace'. */
+:root {
+  --sky: #59c3f0; --sky-2: #8fd8f6;
+  --toon-yellow: #ffd217; --toon-yellow-2: #ffe36a;
+  --panel: #fff6cf; --panel-2: #fffbe8;
+  --ink: #141414; --ink-soft: #4a4330;
+  --cloud: #ffffff;
+  --donut: #f4a9c7; --donut-ink: #8a3d5c;
+  --good: #4aa73b; --good-ink: #1f5417;
+  --run: #1f8ad6; --warn: #e8820e; --bad: #e23b26; --bad-ink: #7a140a;
+  --a-lead: #6a4fb3; --a-recon: #e8601c; --a-code: #1a7fd1; --a-intel: #9b3fbd; --a-ctf: #0f9b8e; --a-report: #c98a00;
+  --line: #141414;
+  --toon: "Luckiest Guy", "Arial Black", Impact, system-ui, sans-serif;
+  --body: "Fredoka", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --shadow: 5px 5px 0 var(--ink);
+  --shadow-sm: 3px 3px 0 var(--ink);
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  font: 15px/1.5 var(--body); color: var(--ink);
+  background: linear-gradient(var(--sky-2), var(--sky) 55%, #bfe9a0 100%);
+  background-attachment: fixed;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--run); outline-offset: 2px; }
+.mono { font-family: "Fredoka", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+/* awan latar belakang */
+.sky { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.wrap { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding-block: 16px 60px; }
+
+/* panel kartun */
+.toon { background: var(--panel); border: 4px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+.toon-sm { border: 3px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-sm); }
+
+/* header */
+.masthead { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: var(--toon-yellow); border: 4px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
+  padding: 12px 18px; margin-bottom: 16px; }
+.logo { font-family: var(--toon); font-size: clamp(26px, 5vw, 40px); letter-spacing: 1px; line-height: .9;
+  color: var(--ink); text-shadow: 2px 2px 0 var(--toon-yellow-2), 3px 3px 0 var(--line); transform: rotate(-2deg); }
+.logo b { color: var(--run); -webkit-text-stroke: 1.5px var(--ink); }
+.tagline { font-weight: 600; color: var(--ink-soft); }
+.live { margin-left: auto; display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.donut { width: 26px; height: 26px; border-radius: 50%; background:
+  radial-gradient(circle at 50% 50%, transparent 0 5px, var(--donut) 6px 12px, var(--donut-ink) 12px 13px, var(--donut) 13px);
+  border: 3px solid var(--line); box-shadow: var(--shadow-sm); }
+.live.on .donut { animation: spin 2.4s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.live.off { color: var(--bad); }
+
+.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+
+/* senarai sesi */
+.rail { position: sticky; top: 12px; }
+.rail h2 { font-family: var(--toon); font-size: 18px; margin: 0 0 10px; color: var(--ink);
+  text-shadow: 1.5px 1.5px 0 var(--toon-yellow); letter-spacing: .5px; }
+.find { width: 100%; padding: 9px 12px; border: 3px solid var(--line); border-radius: 10px; background: #fff;
+  box-shadow: var(--shadow-sm); margin-bottom: 12px; font-weight: 500; }
+.sessions { display: grid; gap: 10px; max-height: calc(100vh - 150px); overflow-y: auto; padding: 4px 6px 4px 2px; }
+.card { width: 100%; text-align: left; background: var(--panel-2); border: 3px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow-sm); padding: 10px 12px; cursor: pointer; transition: transform .08s; }
+.card:hover { transform: translate(-1px, -1px); }
+.card:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+.card[aria-current="true"] { background: var(--toon-yellow); transform: rotate(-1deg); }
+.card .task { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.badge { font-family: var(--toon); font-size: 11px; letter-spacing: .5px; padding: 1px 8px; border-radius: 20px;
+  border: 2px solid var(--line); color: var(--ink); }
+.b-selesai { background: var(--good); color: #fff; }
+.b-berjalan { background: var(--run); color: #fff; }
+.b-terhenti { background: var(--warn); color: #fff; }
+.mini { font-size: 12px; font-weight: 600; color: var(--ink-soft); }
+.mini.bad { color: var(--bad); }
+.chips { display: inline-flex; gap: 3px; }
+.chip-dot { width: 11px; height: 11px; border-radius: 3px; border: 2px solid var(--line); }
+
+/* paparan sesi */
+.view { min-width: 0; display: grid; gap: 16px; }
+.hero { background: var(--toon-yellow); padding: 16px 18px; }
+.hero h1 { font-family: var(--toon); font-size: clamp(20px, 3.4vw, 30px); margin: 0; line-height: 1.05;
+  text-wrap: balance; overflow-wrap: anywhere; letter-spacing: .5px; text-shadow: 2px 2px 0 var(--toon-yellow-2); }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 12px; }
+.pill { background: #fff; border: 3px solid var(--line); border-radius: 20px; box-shadow: var(--shadow-sm);
+  padding: 3px 12px; font-weight: 600; font-size: 13px; }
+.pill b { font-family: var(--toon); font-weight: 400; letter-spacing: .3px; }
+.pill.warn { background: var(--bad); color: #fff; }
+.pill .act { font-family: var(--toon); letter-spacing: .3px; }
+.btn { font-family: var(--toon); letter-spacing: .5px; background: var(--donut); border: 3px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow-sm); padding: 6px 14px; cursor: pointer; }
+.btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+
+/* jubin statistik */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 12px; }
+.tile { background: var(--panel); padding: 12px; text-align: center; }
+.tile .n { font-family: var(--toon); font-size: 30px; line-height: 1; color: var(--ink); text-shadow: 2px 2px 0 var(--toon-yellow); }
+.tile .l { font-weight: 600; font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
+.tile.bad { background: #ffd9d2; } .tile.bad .n { color: var(--bad-ink); text-shadow: 2px 2px 0 #fff; }
+.tile.warn { background: #ffe9c4; } .tile.warn .n { color: #8a5200; text-shadow: 2px 2px 0 #fff; }
+
+/* tajuk seksyen */
+.sec { padding: 14px 16px; }
+.sec > h3 { font-family: var(--toon); font-size: 17px; margin: 0 0 10px; letter-spacing: .5px;
+  text-shadow: 1.5px 1.5px 0 var(--toon-yellow); }
+
+/* garis masa */
+.tl-wrap { overflow-x: auto; }
+.tl text { font-family: var(--body); font-weight: 600; font-size: 11px; fill: var(--ink); }
+.tl .lane { font-family: var(--toon); font-size: 12px; }
+.tl .bar { stroke: var(--line); stroke-width: 2; cursor: pointer; }
+.tl .bar:hover { filter: brightness(1.08); }
+
+/* suapan langkah */
+.feed { display: grid; gap: 12px; }
+.step { background: var(--panel-2); border: 3px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-sm);
+  overflow: hidden; border-left: 10px solid var(--who, var(--line)); }
+.step.flash { animation: pop 1.2s ease; }
+@keyframes pop { 0% { box-shadow: 0 0 0 4px var(--run), var(--shadow-sm); } 100% { box-shadow: var(--shadow-sm); } }
+.step-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px 12px; background: #fff; border-bottom: 3px solid var(--line); }
+.who { font-family: var(--toon); font-size: 13px; letter-spacing: .5px; color: var(--who); -webkit-text-stroke: .4px var(--ink); }
+.arrow { font-weight: 700; }
+.step-h .meta { margin-left: auto; font-weight: 600; font-size: 12px; color: var(--ink-soft); }
+.step-b { padding: 10px 12px; display: grid; gap: 8px; }
+.instr { font-weight: 500; overflow-wrap: anywhere; }
+.reason { font-size: 13px; color: var(--ink-soft); font-style: italic; }
+
+.tool { display: flex; align-items: center; gap: 8px; background: #fff; border: 2px solid var(--line);
+  border-radius: 10px; padding: 5px 10px; cursor: pointer; min-width: 0; }
+.tool .nm { font-family: var(--toon); font-size: 13px; letter-spacing: .3px; flex: none; }
+.tool .ar { font-size: 12px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.stamp { font-family: var(--toon); font-size: 11px; letter-spacing: .5px; padding: 1px 7px; border-radius: 20px; border: 2px solid var(--line); flex: none; }
+.s-ok { background: var(--good); color: #fff; } .s-bad { background: var(--bad); color: #fff; }
+.s-warn { background: var(--warn); color: #fff; } .s-run { background: var(--run); color: #fff; }
+.dur { font-weight: 600; font-size: 12px; color: var(--ink-soft); flex: none; }
+.tool-d { margin-top: 2px; }
+.lbl { font-family: var(--toon); font-size: 11px; letter-spacing: .5px; color: var(--ink-soft); margin: 4px 0 2px; }
+pre { margin: 0; background: #fffdf2; border: 2px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  font: 12px/1.5 "Fredoka", ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; }
+pre .ok { color: var(--good-ink); font-weight: 700; } pre .bad { color: var(--bad-ink); font-weight: 700; }
+
+.bubble { border-radius: 12px; border: 3px solid var(--line); box-shadow: var(--shadow-sm); padding: 8px 12px; font-weight: 500; }
+.bubble.ok { background: #d9f3d2; } .bubble.bad { background: #ffd9d2; } .bubble.warn { background: #ffe9c4; }
+.verdict { font-family: var(--toon); font-size: 11px; letter-spacing: .5px; padding: 1px 8px; border-radius: 20px; border: 2px solid var(--line); }
+.v-ok { background: var(--good); color: #fff; } .v-bad { background: var(--bad); color: #fff; }
+.rtext { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 6px; font-weight: 400; }
+.rtext.clamp { max-height: 160px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 65%, transparent); }
+.link { background: none; border: 0; color: var(--run); cursor: pointer; font-weight: 700; padding: 0; text-decoration: underline; }
+
+.placeholder { padding: 60px 20px; text-align: center; font-weight: 600; }
+.placeholder code { background: var(--panel); border: 2px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+
+.tip { position: fixed; z-index: 40; pointer-events: none; background: var(--ink); color: #fff; padding: 5px 9px;
+  border-radius: 8px; font-weight: 600; font-size: 12px; max-width: 320px; }
+
+.modal { position: fixed; inset: 0; z-index: 50; background: rgb(20 30 50 / .5); display: grid; place-items: center; padding: 16px; }
+.modal-c { background: var(--panel); border: 4px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
+  width: min(820px, 100%); max-height: 90vh; display: flex; flex-direction: column; }
+.modal-h { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 3px solid var(--line); background: var(--toon-yellow); border-radius: 12px 12px 0 0; }
+.modal-h b { font-family: var(--toon); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal-h .btn { margin-left: auto; }
+.md { padding: 8px 22px 24px; overflow-y: auto; }
+.md h1 { font-family: var(--toon); font-size: 22px; margin: 16px 0 8px; }
+.md h2 { font-family: var(--toon); font-size: 17px; margin: 18px 0 6px; }
+.md h3 { font-weight: 700; margin: 14px 0 4px; }
+.md table { border-collapse: collapse; margin: 8px 0; display: block; overflow-x: auto; }
+.md td, .md th { border: 2px solid var(--line); padding: 4px 8px; }
+.md code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+.md pre { max-width: 100%; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+  .rail { position: static; }
+  .sessions { max-height: 320px; }
+}
+@media (prefers-reduced-motion: reduce) { .live.on .donut, .step.flash { animation: none; } }
+</style>
+</head>
+<body>
+<svg class="sky" id="sky" aria-hidden="true" preserveAspectRatio="xMidYMid slice"></svg>
+<div class="wrap">
+  <header class="masthead">
+    <div class="logo"><b>SEC</b>TEAM</div>
+    <div class="tagline">Springfield Ops &middot; aktiviti pasukan</div>
+    <div class="live" id="live"><span class="donut"></span><span id="liveTxt">menyambung&hellip;</span></div>
+  </header>
+  <div class="layout">
+    <nav class="rail" aria-label="Sesi">
+      <h2>Kes</h2>
+      <input id="find" class="find" type="search" placeholder="Cari tugasan&hellip;" autocomplete="off" aria-label="Cari tugasan">
+      <div id="sessions" class="sessions"></div>
+    </nav>
+    <main class="view" id="view"><div class="toon placeholder">Memuatkan&hellip;</div></main>
+  </div>
+</div>
+<div id="tip" class="tip" hidden></div>
+<div id="modal" class="modal" hidden>
+  <div class="modal-c" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="modal-h"><b id="mTitle" class="mono"></b><button class="btn" id="mClose" type="button">Tutup</button></div>
+    <div class="md" id="mBody"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const ACTOR = {
+  lead: ["LEAD", "--a-lead"], recon: ["RECON", "--a-recon"], code_auditor: ["CODE", "--a-code"],
+  threat_intel: ["INTEL", "--a-intel"], ctf_solver: ["CTF", "--a-ctf"], reporter: ["REPORTER", "--a-report"], sys: ["SYS", "--ink-soft"],
+};
+const code = a => (ACTOR[a] || [String(a || "?").toUpperCase().slice(0, 7)])[0];
+const color = a => `var(${(ACTOR[a] || [0, "--ink-soft"])[1]})`;
+const BADGE = { selesai: "SIAP", berjalan: "JALAN", terhenti: "GANTUNG" };
+const S = { sessions: [], sel: null, detail: null, sig: "", open: new Set(), filter: "" };
+
+function h(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k === "style") n.style.cssText = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) n.append(c instanceof Node ? c : String(c));
+  return n;
+}
+function svg(tag, attrs = {}) {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+const clock = t => new Date(t * 1000).toLocaleTimeString("en-GB");
+const day = t => new Date(t * 1000).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+function dur(s) {
+  if (s == null || isNaN(s)) return "";
+  if (s < 1) return `${Math.round(s * 1000)}ms`;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  return `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, "0")}s`;
+}
+function argStr(a) {
+  if (!a || (typeof a === "object" && !Object.keys(a).length)) return "";
+  if (Array.isArray(a)) return JSON.stringify(a);
+  return Object.entries(a).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join("  ");
+}
+const getJSON = async u => { const r = await fetch(u, { cache: "no-store" }); if (!r.ok) throw new Error(r.status); return r.json(); };
+
+// ---- awan ----
+function drawSky() {
+  const el = document.getElementById("sky");
+  const W = 1200, H = 800;
+  el.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const puff = (cx, cy, r) => svg("circle", { cx, cy, r, fill: "var(--cloud)", opacity: 0.9 });
+  let seed = 7;
+  const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  for (let i = 0; i < 11; i++) {
+    const x = rnd() * W, y = rnd() * (H * 0.8), s = 0.6 + rnd() * 0.9;
+    const g = svg("g", { opacity: 0.85, transform: `translate(${x} ${y}) scale(${s})` });
+    [[0, 0, 34], [38, 6, 26], [-36, 8, 24], [14, -14, 26], [-12, -10, 22]].forEach(([a, b, c]) => g.append(puff(a, b, c)));
+    g.append(svg("rect", { x: -60, y: 8, width: 120, height: 30, rx: 15, fill: "var(--cloud)" }));
+    el.append(g);
+  }
+}
+
+// ---- senarai sesi ----
+function renderSessions() {
+  const box = document.getElementById("sessions");
+  const f = S.filter.toLowerCase();
+  const rows = S.sessions.filter(x => !f || x.task.toLowerCase().includes(f)).map(x => {
+    const st = x.stats;
+    return h("button", { type: "button", class: "card", "aria-current": x.id === S.sel ? "true" : "false", onclick: () => select(x.id) },
+      h("div", { class: "task", title: x.task }, x.task),
+      h("div", { class: "row" },
+        h("span", { class: "badge b-" + x.status }, BADGE[x.status]),
+        h("span", { class: "mini" }, `${day(x.start)} ${clock(x.start).slice(0, 5)}`),
+        h("span", { class: "mini" }, `${st.tool_calls} alat`),
+        st.errors ? h("span", { class: "mini bad" }, `${st.errors} alamak`) : null,
+        st.unverified ? h("span", { class: "mini bad" }, `${st.unverified} ?!` ) : null,
+        h("span", { class: "chips" }, ...x.members.map(m => h("span", { class: "chip-dot", title: code(m), style: `background:${color(m)}` })))));
+  });
+  box.replaceChildren(...(rows.length ? rows : [h("div", { class: "mini", style: "padding:8px" }, "Teda kes sepadan.")]));
+}
+
+function select(id) {
+  if (S.sel === id) return;
+  S.sel = id; S.detail = null; S.sig = ""; S.open.clear();
+  history.replaceState(null, "", "#s=" + encodeURIComponent(id));
+  renderSessions(); load();
+}
+async function load() {
+  if (!S.sel) return;
+  try {
+    const d = await getJSON("/api/session?id=" + encodeURIComponent(S.sel));
+    const sig = d.events.length + d.summary.status;
+    if (sig === S.sig) return;
+    S.sig = sig; S.detail = d; render();
+  } catch { document.getElementById("view").replaceChildren(h("div", { class: "toon placeholder" }, "Kes ni nda dapat dibuka.")); }
+}
+
+// ---- model langkah ----
+function model(evs) {
+  const rows = [], pending = [];
+  let step = 0;
+  const ensure = () => rows.length && rows[rows.length - 1];
+  for (const e of evs) {
+    switch (e.event) {
+      case "supervisor_decision":
+        step++;
+        rows.push({ kind: "step", e, step, actor: "lead", next: e.next, instr: e.instruction, why: e.reason, d: e.ms != null ? e.ms / 1000 : null, items: [], result: null });
+        break;
+      case "loop_guard": rows.push({ kind: "guard", e }); break;
+      case "specialist_start": { const s = lastStep(rows); if (s) s.start = e; break; }
+      case "tool_call": { const r = { e, res: null, key: e.call || e._src }; (lastStep(rows)?.items || []).push(r); pending.push(r); break; }
+      case "tool_result": case "tool_error": case "scope_denied": case "tool_cancelled": {
+        const r = pending.find(p => !p.res && (e.call ? p.e.call === e.call : p.e.tool === e.tool)); if (r) r.res = e; break;
+      }
+      case "approval_request": case "approval_granted": case "approval_denied":
+        (lastStep(rows)?.items || []).push({ approval: e, key: e._src }); break;
+      case "specialist_result": { const s = lastStep(rows); if (s) s.result = e; break; }
+      case "reporter_done": rows.push({ kind: "report", e }); break;
+      case "session_end": rows.push({ kind: "end", e }); break;
+    }
+  }
+  for (const r of rows) for (const it of (r.items || [])) if (it.e) {
+    const res = it.res;
+    it.d = res ? (res.ms != null ? res.ms / 1000 : res.t - it.e.t) : null;
+    it.status = !res ? "run" : { tool_result: "ok", tool_error: "bad", scope_denied: "bad", tool_cancelled: "warn" }[res.event];
+    it.bad = it.status === "bad";
+    it.out = res ? (res.preview ?? res.error ?? res.reason ?? `(${res.chars || 0} aksara)`) : null;
+  }
+  return rows;
+}
+function lastStep(rows) { for (let i = rows.length - 1; i >= 0; i--) if (rows[i].kind === "step") return rows[i]; return null; }
+
+// ---- render ----
+function render() {
+  const { summary: x, events } = S.detail;
+  const rows = model(events);
+  const t0 = x.start;
+  const total = (x.end || (x.status === "berjalan" ? Date.now() / 1000 : x.last)) - t0;
+  const st = x.stats;
+  const pill = (label, ...v) => h("span", { class: "pill" }, label + " ", h("b", {}, ...v));
+  const acts = [];
+  const add = (n, w) => { if (n) acts.push(h("span", { class: "pill" + (w ? " warn" : "") }, h("span", { class: "act" }, n)) ); };
+  add(`${st.tool_calls} ALAT`); add(st.errors && `${st.errors} ALAMAK`, true);
+  add(st.scope_denied && `${st.scope_denied} LUAR SKOP`, true); add(st.unverified && `${st.unverified} TAK SAH`, true);
+
+  const hero = h("div", { class: "toon hero" },
+    h("h1", {}, x.task),
+    h("div", { class: "facts" },
+      h("span", { class: "pill" }, h("b", {}, BADGE[x.status])),
+      pill("Mula", `${day(t0)} ${clock(t0)}`),
+      pill("Tempoh", dur(total)),
+      ...x.members.map(m => h("span", { class: "pill", style: `border-color:${color(m)}` }, h("span", { class: "act", style: `color:${color(m)}` }, code(m)))),
+      x.engagement ? pill("Engagement", x.engagement) : null,
+      x.code ? h("span", { class: "pill", title: x.code }, "Kod ", h("b", {}, x.code.split(/[\\/]/).pop())) : null,
+      x.files ? h("span", { class: "pill", title: x.files }, "Fail ", h("b", {}, x.files.split(/[\\/]/).pop())) : null,
+      x.auto_approve ? h("span", { class: "pill warn" }, h("span", { class: "act" }, "AUTO-APPROVE")) : null,
+      ...acts,
+      x.report ? h("button", { class: "btn", onclick: () => openReport(x.report) }, "Laporan") : null));
+
+  const tile = (n, l, cls = "") => h("div", { class: "toon-sm tile " + (n ? cls : "") }, h("div", { class: "n" }, n), h("div", { class: "l" }, l));
+  const tiles = h("div", { class: "tiles" },
+    tile(st.decisions, "Keputusan"), tile(st.tool_calls, "Panggilan alat"),
+    tile(st.errors, "Alamak!", "bad"), tile(st.scope_denied, "Luar skop", "bad"),
+    tile(st.approvals, "Kelulusan", "warn"), tile(st.unverified, "Tak sah", "bad"));
+
+  const lanes = ["lead", ...new Set([...x.members, ...events.map(e => e.agent).filter(a => a && a !== "?" && a !== "reporter")]), "reporter"];
+  const tl = h("div", { class: "toon sec" }, h("h3", {}, "Garis masa pasukan"), h("div", { class: "tl-wrap", id: "tlWrap" }));
+  const feed = h("div", { class: "toon sec" }, h("h3", {}, "Apa jadi, langkah demi langkah"),
+    h("div", { class: "feed" }, ...rows.map((r, i) => renderRow(r, i, rows))));
+
+  const view = document.getElementById("view");
+  const keep = window.scrollY;
+  view.replaceChildren(hero, tiles, tl, feed);
+  window.scrollTo(0, keep);
+  drawTimeline(document.getElementById("tlWrap"), x, rows, lanes);
+}
+
+function renderRow(r, i, rows) {
+  if (r.kind === "guard")
+    return h("div", { class: "bubble warn" }, "Pengawal gelung: ", r.e.reason, " → terus ke REPORTER");
+  if (r.kind === "report")
+    return h("div", { class: "step", id: "rep", style: `--who:${color("reporter")}` },
+      h("div", { class: "step-h" }, h("span", { class: "who", style: `--who:${color("reporter")}` }, "REPORTER"), " tulis laporan",
+        h("span", { class: "meta" }, `${r.e.chars || 0} aksara · ${dur((r.e.ms || 0) / 1000)} · ${clock(r.e.t)}`)));
+  if (r.kind === "end")
+    return h("div", { class: "bubble ok" }, `Kes tutup ${clock(r.e.t)}. `,
+      r.e.report ? h("button", { class: "link", onclick: () => openReport(r.e.report) }, "Buka laporan →") : null);
+
+  const a = r.next;
+  const box = h("div", { class: "step", id: "step-" + r.step, style: `--who:${color(a)}` });
+  box.append(h("div", { class: "step-h" },
+    h("span", { class: "who", style: `--who:${color("lead")}` }, "LEAD"), h("span", { class: "arrow" }, "→"),
+    h("span", { class: "who", style: `--who:${color(a)}` }, code(a)),
+    h("span", { class: "meta" }, [r.d ? `fikir ${dur(r.d)}` : null, clock(r.e.t)].filter(Boolean).join(" · "))));
+  const b = h("div", { class: "step-b" });
+  if (r.instr) b.append(h("div", { class: "instr" }, r.instr));
+  if (r.why) b.append(h("div", { class: "reason" }, "Sebab: ", r.why));
+  for (const it of r.items) b.append(it.approval ? renderApproval(it.approval) : renderTool(it));
+  if (r.result) b.append(renderResult(r.result, "r" + i));
+  if (b.childNodes.length) box.append(b);
+  return box;
+}
+
+function renderTool(it) {
+  const st = { ok: ["OK", "s-ok"], bad: ["ALAMAK", "s-bad"], warn: ["BATAL", "s-warn"], run: ["...", "s-run"] }[it.status] || ["?", "s-run"];
+  const open = it.out != null && S.open.has(it.key);
+  const wrap = h("div", {});
+  const head = h("div", { class: "tool", onclick: it.out != null ? () => { S.open.has(it.key) ? S.open.delete(it.key) : S.open.add(it.key); render(); } : null },
+    h("span", { class: "nm" }, it.e.tool),
+    h("span", { class: "ar", title: argStr(it.e.args) }, argStr(it.e.args) || "()"),
+    h("span", { class: "stamp " + st[1] }, st[0]),
+    h("span", { class: "dur" }, dur(it.d)));
+  wrap.append(head);
+  if (open) {
+    const d = h("div", { class: "tool-d" }, h("div", { class: "lbl" }, "Argumen"), h("pre", {}, JSON.stringify(it.e.args, null, 2)),
+      h("div", { class: "lbl" }, it.status === "ok" ? "Output alat" : st[0]));
+    const pre = h("pre", {});
+    for (const line of String(it.out).split("\n")) pre.append(markLine(line), "\n");
+    d.append(pre); wrap.append(d);
+  }
+  return wrap;
+}
+function markLine(line) {
+  if (line.includes("[TIDAK DISAHKAN]")) return h("span", { class: "bad" }, line);
+  if (line.includes("[DISAHKAN]")) return h("span", { class: "ok" }, line);
+  return line;
+}
+function renderApproval(e) {
+  if (e.event === "approval_request") return h("div", { class: "bubble warn" }, "Minta kelulusan: ", h("b", {}, e.action), " — ", (e.detail || "").split("\n")[0]);
+  if (e.event === "approval_granted") return h("div", { class: "bubble ok" }, `Diluluskan${e.auto ? " (auto)" : ""}: ${e.action}`);
+  return h("div", { class: "bubble bad" }, `Ditolak: ${e.action}`);
+}
+function renderResult(res, key) {
+  const text = res.result || `(${res.chars || 0} aksara)`;
+  const bad = res.unverified || text.includes("[TIDAK DISAHKAN]"), ok = !bad && text.includes("[DISAHKAN]");
+  const long = text.length > 600, open = S.open.has(key);
+  const box = h("div", { class: "bubble " + (bad ? "bad" : ok ? "ok" : "") },
+    h("div", { style: "display:flex;gap:8px;align-items:center;flex-wrap:wrap" },
+      h("span", { class: "who", style: `--who:${color(res.agent)};font-size:12px` }, code(res.agent)),
+      h("span", { style: "font-weight:600" }, "ringkasan"),
+      bad ? h("span", { class: "verdict v-bad" }, "TAK SAH") : ok ? h("span", { class: "verdict v-ok" }, "SAH") : null));
+  const rt = h("div", { class: "rtext" + (long && !open ? " clamp" : "") });
+  for (const line of text.split("\n")) rt.append(markLine(line), "\n");
+  box.append(rt);
+  if (long) box.append(h("button", { class: "link", onclick: () => { open ? S.open.delete(key) : S.open.add(key); render(); } }, open ? "Kurangkan" : "Baca penuh"));
+  return box;
+}
+
+// ---- garis masa SVG ----
+function drawTimeline(box, x, rows, lanes) {
+  const t0 = x.start, t1 = Math.max(x.end || (x.status === "berjalan" ? Date.now() / 1000 : x.last), t0 + 1);
+  const W = Math.max(box.clientWidth, 560), LW = 90, RH = 30, TOP = 22, H = TOP + lanes.length * RH + 8;
+  const X = t => LW + ((t - t0) / (t1 - t0)) * (W - LW - 16), Y = a => TOP + Math.max(lanes.indexOf(a), 0) * RH;
+  const g = svg("svg", { class: "tl", width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Garis masa agent" });
+  const span = t1 - t0, stepS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600].find(v => span / v <= 9) || 3600;
+  for (let v = 0; v <= span + 1e-9; v += stepS) {
+    const xx = X(t0 + v);
+    g.append(svg("line", { x1: xx, x2: xx, y1: TOP - 2, y2: H - 6, stroke: "#141414", "stroke-opacity": 0.12 }));
+    const tx = svg("text", { x: xx + 3, y: 13 }); tx.textContent = dur(v).replace(".0s", "s"); g.append(tx);
+  }
+  lanes.forEach((a, i) => {
+    g.append(svg("rect", { x: 0, y: Y(a), width: W, height: RH, fill: i % 2 ? "#ffffff" : "transparent", opacity: 0.35 }));
+    const tx = svg("text", { x: 8, y: Y(a) + RH / 2 + 4, class: "lane", fill: color(a) }); tx.textContent = code(a); g.append(tx);
+  });
+  const bar = (lane, aa, bb, kind, tip, target, bad) => {
+    const xa = X(aa), w = Math.max(X(bb) - xa, kind === "tool" ? 4 : 5), y = Y(lane);
+    const o = kind === "span"
+      ? { x: xa, y: y + 5, width: w, height: RH - 10, rx: 6, fill: color(lane), "fill-opacity": 0.28 }
+      : { x: xa, y: y + 8, width: w, height: RH - 16, rx: 4, fill: bad ? "var(--bad)" : color(lane) };
+    const r = svg("rect", { ...o, class: "bar" });
+    r.addEventListener("mousemove", ev => tipShow(ev, tip));
+    r.addEventListener("mouseleave", tipHide);
+    if (target) r.addEventListener("click", () => jump(target));
+    g.append(r);
+  };
+  const spans = [];
+  let cur = null;
+  for (const r of rows) {
+    if (r.kind === "step") {
+      if (r.d) bar("lead", r.e.t - r.d, r.e.t, "tool", `LEAD → ${code(r.next)} (${dur(r.d)})`, "step-" + r.step);
+      cur = r.next !== "reporter" ? { lane: r.next, a: (r.start || r.e).t, b: null, step: r.step } : null;
+      if (cur) spans.push(cur);
+      if (cur && r.result) cur.b = r.result.t;
+      for (const it of r.items) {
+        const end = it.res ? it.res.t : Date.now() / 1000, sta = it.d != null && it.res ? end - it.d : it.e.t;
+        if (cur) cur.b = Math.max(cur.b || 0, end);
+        bar(it.e.agent && it.e.agent !== "?" ? it.e.agent : r.next, sta, end, "tool",
+          `${it.e.tool} · ${it.res ? dur(end - sta) : "jalan"}${it.bad ? " · ALAMAK" : ""}`, "step-" + r.step, it.bad);
+      }
+    }
+  }
+  for (const s of spans) {
+    const b = s.b || (x.status === "berjalan" ? Date.now() / 1000 : s.a);
+    bar(s.lane, s.a, b, "span", `${code(s.lane)} · ${dur(b - s.a)}`, "step-" + s.step);
+  }
+  const rep = rows.find(r => r.kind === "report");
+  if (rep) bar("reporter", rep.e.t - (rep.e.ms || 0) / 1000, rep.e.t, "span", `REPORTER · ${dur((rep.e.ms || 0) / 1000)}`, "rep");
+  [...g.querySelectorAll('rect[fill-opacity]')].forEach(n => g.insertBefore(n, g.querySelector("rect.bar:not([fill-opacity])")));
+  box.replaceChildren(g);
+}
+
+const tipEl = document.getElementById("tip");
+function tipShow(ev, t) { tipEl.textContent = t; tipEl.hidden = false; tipEl.style.left = ev.clientX + 12 + "px"; tipEl.style.top = ev.clientY + 14 + "px"; }
+function tipHide() { tipEl.hidden = true; }
+function jump(id) {
+  const n = document.getElementById(id); if (!n) return;
+  n.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+  n.classList.remove("flash"); void n.offsetWidth; n.classList.add("flash");
+}
+
+// ---- laporan ----
+const esc = t => t.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const inl = t => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+function md(text) {
+  const out = [], L = text.split("\n");
+  for (let i = 0; i < L.length; i++) {
+    const l = L[i];
+    if (/^\s*\|/.test(l)) {
+      const rows = []; while (i < L.length && /^\s*\|/.test(L[i])) rows.push(L[i++]); i--;
+      const cells = r => r.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+      out.push("<table>" + rows.filter(r => !/^\s*\|[\s:|-]+\|\s*$/.test(r)).map((r, j) =>
+        "<tr>" + cells(r).map(c => j ? `<td>${inl(c)}</td>` : `<th>${inl(c)}</th>`).join("") + "</tr>").join("") + "</table>");
+    } else if (/^```/.test(l)) {
+      const b = []; i++; while (i < L.length && !/^```/.test(L[i])) b.push(L[i++]);
+      out.push(`<pre>${esc(b.join("\n"))}</pre>`);
+    } else if (/^#{1,3} /.test(l)) { const n = l.match(/^#+/)[0].length; out.push(`<h${n}>${inl(l.slice(n + 1))}</h${n}>`); }
+    else if (/^\s*[-*] /.test(l)) out.push(`<div style="padding-left:16px">• ${inl(l.replace(/^\s*[-*] /, ""))}</div>`);
+    else if (l.trim()) out.push(`<p style="margin:6px 0">${inl(l)}</p>`);
+  }
+  return out.join("");
+}
+async function openReport(path) {
+  const m = document.getElementById("modal");
+  document.getElementById("mTitle").textContent = path;
+  document.getElementById("mBody").textContent = "Memuatkan…";
+  m.hidden = false; document.getElementById("mClose").focus();
+  try {
+    const r = await fetch("/api/report?path=" + encodeURIComponent(path));
+    if (!r.ok) throw new Error();
+    document.getElementById("mBody").innerHTML = md(await r.text());  // md() escape semua teks dulu
+  } catch { document.getElementById("mBody").textContent = "Laporan nda dijumpa (mungkin suda dipadam)."; }
+}
+const closeModal = () => (document.getElementById("modal").hidden = true);
+document.getElementById("mClose").onclick = closeModal;
+document.getElementById("modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+document.getElementById("find").addEventListener("input", e => { S.filter = e.target.value; renderSessions(); });
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => S.detail && render(), 150); });
+
+// ---- gelung langsung ----
+async function tick() {
+  const live = document.getElementById("live"), txt = document.getElementById("liveTxt");
+  try {
+    S.sessions = await getJSON("/api/sessions");
+    live.className = "live on"; txt.textContent = "langsung " + new Date().toLocaleTimeString("en-GB");
+    if (!S.sel) {
+      const want = decodeURIComponent((location.hash.match(/s=([^&]+)/) || [])[1] || "");
+      const pick = S.sessions.find(v => v.id === want) || S.sessions[0];
+      if (pick) select(pick.id);
+      else document.getElementById("view").replaceChildren(h("div", { class: "toon placeholder" },
+        "Teda kes lagi. Jalankan ", h("code", {}, ".\\secteam cve CVE-2021-44228"), " dulu bah."));
+    } else {
+      const cur = S.sessions.find(v => v.id === S.sel);
+      if (cur && (cur.status === "berjalan" || !S.detail || S.detail.summary.status !== cur.status)) load();
+    }
+    renderSessions();
+  } catch { live.className = "live off"; txt.textContent = "pelayan nda jawab"; }
+}
+drawSky();
+tick();
+setInterval(tick, 2500);
+</script>
+</body>
+</html>

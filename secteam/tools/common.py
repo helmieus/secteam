@@ -2,6 +2,8 @@
 import functools
 import sys
 import threading
+import time
+import uuid
 
 from rich.prompt import Confirm
 
@@ -46,19 +48,26 @@ def guarded(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         name = fn.__name__
-        RT.audit.log("tool_call", tool=name, args=kwargs or list(args))
+        call_id = uuid.uuid4().hex[:8]
+        RT.audit.log("tool_call", tool=name, call=call_id, args=kwargs or list(args))
+        t0 = time.perf_counter()
+
+        def ms() -> int:
+            return int((time.perf_counter() - t0) * 1000)
+
         try:
             out = fn(*args, **kwargs)
         except ScopeError as e:
-            RT.audit.log("scope_denied", tool=name, reason=str(e))
+            RT.audit.log("scope_denied", tool=name, call=call_id, reason=str(e), ms=ms())
             return f"[DITOLAK - LUAR SKOP] {e} Jangan cuba memintas; laporkan kepada lead."
         except ApprovalDenied as e:
+            RT.audit.log("tool_cancelled", tool=name, call=call_id, reason=str(e), ms=ms())
             return f"[DIBATALKAN] {e}"
         except Exception as e:  # noqa: BLE001 - pulangkan ralat kepada model
-            RT.audit.log("tool_error", tool=name, error=f"{type(e).__name__}: {e}")
+            RT.audit.log("tool_error", tool=name, call=call_id, error=f"{type(e).__name__}: {e}", ms=ms())
             return f"[RALAT] {type(e).__name__}: {e}"
         out = truncate(str(out))
-        RT.audit.log("tool_result", tool=name, chars=len(out))
+        RT.audit.log("tool_result", tool=name, call=call_id, chars=len(out), ms=ms(), preview=out[:2500])
         return out
 
     return wrapper

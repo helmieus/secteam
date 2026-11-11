@@ -2,6 +2,8 @@
 import datetime as dt
 import os
 import re
+import threading
+import time
 
 import httpx
 from langchain_core.tools import tool
@@ -17,13 +19,29 @@ CVE_RE = re.compile(r"^CVE-\d{4}-\d{4,}$", re.I)
 _kev_cache: dict | None = None
 
 
+_nvd_lock = threading.Lock()
+ECOSYSTEMS = {
+    "pypi": "PyPI", "pip": "PyPI", "python": "PyPI", "npm": "npm", "node": "npm", "nodejs": "npm",
+    "maven": "Maven", "java": "Maven", "go": "Go", "golang": "Go", "cargo": "crates.io", "rust": "crates.io",
+    "crates.io": "crates.io", "rubygems": "RubyGems", "gem": "RubyGems", "ruby": "RubyGems",
+    "nuget": "NuGet", ".net": "NuGet", "packagist": "Packagist", "composer": "Packagist", "php": "Packagist",
+}
+
+
 def _nvd(params: dict) -> dict:
+    """Panggilan NVD bersiri dengan cuba semula untuk 429/503 (had kadar tanpa API key: 5 req/30s)."""
     headers = {}
     if key := os.environ.get("NVD_API_KEY"):
         headers["apiKey"] = key
-    r = httpx.get(NVD_URL, params=params, headers=headers, timeout=40)
-    r.raise_for_status()
-    return r.json()
+    with _nvd_lock:
+        for attempt in range(4):
+            r = httpx.get(NVD_URL, params=params, headers=headers, timeout=40)
+            if r.status_code in (429, 503) and attempt < 3:
+                time.sleep(6 * (attempt + 1))
+                continue
+            r.raise_for_status()
+            return r.json()
+    raise RuntimeError("NVD tidak tersedia")
 
 
 def _kev() -> dict:
@@ -110,6 +128,7 @@ def cve_search(keyword: str, max_results: int = 10) -> str:
 def osv_lookup(package: str, ecosystem: str, version: str = "") -> str:
     """Check an open-source package version for known vulnerabilities via OSV.dev.
     ecosystem: PyPI, npm, Maven, Go, crates.io, RubyGems, NuGet, Packagist, ..."""
+    ecosystem = ECOSYSTEMS.get(ecosystem.strip().lower(), ecosystem.strip())
     body: dict = {"package": {"name": package, "ecosystem": ecosystem}}
     if version:
         body["version"] = version
