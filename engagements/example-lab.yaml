@@ -1,0 +1,25 @@
+# Contoh fail engagement. WAJIB untuk sebarang recon/scan aktif.
+# Hanya isi target yang anda miliki atau ada KEBENARAN BERTULIS untuk diuji.
+name: Home Lab - VirtualBox host-only
+client: Diri sendiri
+authorized_by: Pemilik lab (saya)
+authorization_ref: LAB-2026-001        # no. SOW / surat kebenaran / tiket
+valid_from: 2026-11-01
+valid_until: 2026-12-31
+
+scope:
+  include:
+    - 192.168.56.0/24       # rangkaian host-only VirtualBox (cth. Metasploitable, DVWA)
+    - "*.lab.local"
+  exclude:
+    - 192.168.56.1          # adapter host sendiri
+
+# passive_recon | web_probe | port_scan | vuln_scan
+allowed_activities:
+  - passive_recon
+  - web_probe
+  - port_scan
+  - vuln_scan
+
+notes: |
+  Lab peribadi. Tiada sistem produksi.

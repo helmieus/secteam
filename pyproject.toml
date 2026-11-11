@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "secteam"
+version = "0.1.0"
+description = "Orkestrasi pasukan AI security research menggunakan model open-source (LangGraph + Ollama)"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=0.2.60",
+    "langchain-core>=0.3",
+    "langchain-ollama>=0.2",
+    "httpx>=0.27",
+    "pyyaml>=6",
+    "typer>=0.12",
+    "rich>=13",
+]
+
+[project.optional-dependencies]
+sast = ["semgrep", "bandit"]
+
+[project.scripts]
+secteam = "secteam.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["secteam*"]
