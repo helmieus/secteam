@@ -66,7 +66,8 @@ def _context() -> str:
     if RT.engagement:
         parts.append(RT.engagement.summary())
     else:
-        parts.append("No engagement loaded: active recon/scanning is NOT authorized.")
+        parts.append("No engagement file loaded. The human operator directs the targets. "
+                     "Active actions (port_scan, vuln_scan, http_request, run_python) still require approval.")
     if RT.code_root:
         parts.append(f"Source code available for audit at: {RT.code_root}")
     return "\n".join(parts)
@@ -154,9 +155,9 @@ def audit(path: Path = typer.Argument(..., help="Direktori kod sumber."),
     cfg = _setup(config, None, path, False)
     task = ("Perform a thorough security code audit of the provided source code. Find and verify "
             "vulnerabilities, check dependencies for known CVEs, and prioritise by severity.")
-    # scan_code sudah merangkumi semakan CVE dependency (OSV), jadi audit hanya perlukan code_auditor.
-    # Gunakan 'secteam run ... -c <dir>' untuk pasukan penuh.
-    _execute(task + (f" Focus: {focus}" if focus else ""), cfg, max_steps or 3, members=["code_auditor"])
+    # scan_code sudah merangkumi semakan CVE dependency (OSV); audit hanya perlukan analyst.
+    # Gunakan 'secteam run ... -c <dir>' untuk pasukan penuh (spy/analyst/operator).
+    _execute(task + (f" Focus: {focus}" if focus else ""), cfg, max_steps or 3, members=["analyst"])
 
 
 @app.command()
@@ -165,7 +166,7 @@ def cve(query: str = typer.Argument(..., help="ID CVE, produk, atau soalan threa
     """Analisis threat intel untuk CVE / produk."""
     cfg = _setup(config, None, None, False)
     _execute(f"Threat intelligence analysis: {query}. Assess severity, exploitation status and mitigation.",
-             cfg, 3, members=["threat_intel"])
+             cfg, 3, members=["analyst"])
 
 
 @app.command()
@@ -173,7 +174,7 @@ def research(query: str = typer.Argument(..., help="Soalan maklumat am (cth. 'ap
              config: Path = CfgOpt):
     """Cari maklumat di internet dengan sumber (bukan CVE: tool, teknik, konsep, produk)."""
     cfg = _setup(config, None, None, False)
-    _execute(f"Research this and report factually with sources: {query}", cfg, 3, members=["researcher"])
+    _execute(f"Research this and report factually with sources: {query}", cfg, 3, members=["spy"])
 
 
 @app.command()

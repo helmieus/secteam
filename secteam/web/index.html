@@ -178,8 +178,8 @@ pre .v-ok { color: var(--ok); font-weight: 600; } pre .v-bad { color: var(--bad)
 <script>
 "use strict";
 const ACTOR = {
-  lead: ["LEAD", "--a-lead"], recon: ["RECON", "--a-recon"], code_auditor: ["CODE", "--a-code"],
-  threat_intel: ["INTEL", "--a-intel"], ctf_solver: ["CTF", "--a-ctf"], reporter: ["REPORT", "--a-report"], sys: ["SYS", "--dim"],
+  lead: ["LEAD", "--a-lead"], spy: ["SPY", "--a-recon"], analyst: ["ANALYST", "--a-intel"],
+  operator: ["OP", "--a-ctf"], reporter: ["REPORT", "--a-report"], sys: ["SYS", "--dim"],
 };
 const code = a => (ACTOR[a] || [String(a || "?").toUpperCase().slice(0, 6)])[0];
 const color = a => `var(${(ACTOR[a] || [0, "--dim"])[1]})`;

@@ -12,8 +12,7 @@ from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from .config import model_for
-from .tools import INTEL_TOOLS, RECON_TOOLS, RESEARCH_TOOLS, SAST_TOOLS
-from .tools.intel import osv_lookup
+from .tools import ANALYST_TOOLS, OPERATOR_TOOLS, SPY_TOOLS
 from .ui import console
 
 COMMON_RULES = """
@@ -28,53 +27,80 @@ Rules (mandatory):
 """
 
 SPECIALISTS: dict[str, dict] = {
-    "recon": {
-        "description": "Recon & pentest on in-scope targets: DNS/RDAP, HTTP probing, nmap port scan, nuclei vuln scan.",
-        "tools": RECON_TOOLS,
-        "prompt": """You are the Recon & Penetration Testing specialist.
-Methodology: passive first (dns_lookup, rdap_lookup) -> port_scan (start with top100) ->
-http_probe on discovered web ports -> vuln_scan only on confirmed web services and only if needed.
-Interpret results: exposed services, outdated versions, missing security headers, misconfigurations.
-Map service versions to likely CVEs as HYPOTHESES for the threat_intel specialist to verify.""",
+    "spy": {
+        "description": "Perisik: gathers raw intel - network (nmap service detection), web (tech stack & "
+                       "endpoint discovery), OSINT (web_search), and binary analysis (strings). No exploitation.",
+        "tools": SPY_TOOLS,
+        "prompt": """You are the Spy (Perisik) - reconnaissance and intelligence gathering.
+Collect as much raw, factual data as possible WITHOUT active attacks that would damage the target.
+
+Tasks:
+1. Gather facts and raw data about the target.
+2. Make NO assumptions or speculation - that is the Analyst's job.
+3. Do NOT attempt exploitation.
+4. Give precise, structured, complete data.
+5. Use the provided tools with correct parameters.
+
+Focus:
+- Network: port_scan (service + version detection), dns_lookup, rdap_lookup.
+- Web: technology stack and endpoint discovery (http_probe, web_search).
+- Software/binary: file_info then extract_strings.
+
+OUTPUT: structured facts (prefer a JSON-like block) that the Analyst can process directly.
+Only report what the tools actually returned; never invent data, versions or URLs.""",
     },
-    "code_auditor": {
-        "description": "Source code security audit (SAST): semgrep, bandit, manual review of risky code, dependency CVEs.",
-        "tools": [*SAST_TOOLS, osv_lookup],
-        "prompt": """You are the Code Security Auditor.
-Step 1: call scan_code ONCE with NO arguments (it scans the whole audit root: semgrep + bandit +
-dependency CVE check, de-duplicated). All paths are RELATIVE to the audit root.
-Do NOT also call run_semgrep / run_bandit / list_files - scan_code already covers them.
-Step 2: for HIGH findings, optionally read_file around the line to confirm user input reaches it
-(e.g. read_file(path, start_line=line-10, end_line=line+5)). Mark a finding false positive only if the code
-clearly shows it is safe.
-Step 3: optionally search_code for issues scanners miss (auth checks, IDOR, business logic).
-Then STOP and write the final summary: one entry per scan_code item (C1, C2, ... and D1, D2, ...)
-with severity, vulnerability class, file:line, the code line as evidence, impact, and the fix.
-For the fix, COPY the "Pembaikan:" line from scan_code verbatim - do not invent your own remediation.
-For dependency impact, describe only the vulnerability types listed in "Jenis:" - do not exaggerate.
-Copy file names, line numbers, CVE IDs and versions EXACTLY from tool output.""",
+    "analyst": {
+        "description": "Penyelidik Kerentanan: analyses the Spy's data, correlates it, maps CVEs (NVD/OSV/KEV), "
+                       "audits code (semgrep/bandit), and produces testable hypotheses with confidence scores.",
+        "tools": ANALYST_TOOLS,
+        "prompt": """You are the Analyst (Penyelidik Kerentanan / Vulnerability Researcher) in a Red Team.
+
+Tasks:
+1. Analyse the Spy's data carefully.
+2. Connect the data points to find correlations.
+3. Identify potential vulnerabilities based on:
+   - CVE database (cve_lookup / cve_search / osv_lookup / kev_recent)
+   - Known attack patterns
+   - Security best-practice violations
+   - Code logic flaws (scan_code / read_file / search_code)
+4. Give TESTABLE (actionable) hypotheses.
+5. Assign a confidence score (0.0 - 1.0) to each hypothesis.
+
+Thinking per domain:
+- DOM XSS: bypass techniques (innerText/innerHTML, event handlers, gadget chains).
+- Network: CVE matching and misconfigurations.
+- Reverse engineering: buffer overflow, memory corruption, binary exploitation.
+
+OUTPUT: list hypotheses from HIGHEST to LOWEST confidence, each with a concrete suggested test for the
+Operator. Only cite CVEs, versions and evidence that appear in actual tool output - never invent them.""",
     },
-    "researcher": {
-        "description": "General web research for open questions: what a tool/technique/concept/product IS, "
-                       "how it works, current info, docs. Use this for anything that is NOT a specific CVE lookup.",
-        "tools": RESEARCH_TOOLS,
-        "prompt": """You are the Research analyst. You answer open-ended questions using web_search.
-Call web_search with a focused query (refine and search again if the first results are thin).
-Answer ONLY from the returned results. After each fact put the source number like [1] or [2], and end with
-a short "Sumber:" list of the [n] URLs you actually used (copy them verbatim from the results).
-If the results do not actually answer the question, say so plainly - do NOT fall back to memory, and NEVER
-invent CVEs, URLs, versions or facts. Keep it concise and factual.""",
-    },
-    "threat_intel": {
-        "description": "CVE threat intel ONLY: details for a specific CVE id, CVSS/EPSS/CISA-KEV, package "
-                       "vulnerabilities (OSV), recently exploited CVEs. NOT for general 'what is X' questions.",
-        "tools": INTEL_TOOLS,
-        "prompt": """You are the Threat Intelligence analyst.
-Use cve_lookup / cve_search / osv_lookup / kev_recent. Prioritise by: in CISA KEV > high EPSS > CVSS.
-State affected and fixed versions when known, and concrete mitigation/patch guidance.
-ONLY look up CVE IDs, products, packages and versions that appear in your assignment or in teammates'
-findings - never invent package names or versions. Make at most 4 tool calls per turn and never repeat
-a call. Only cite CVE IDs that appear in tool output.""",
+    "operator": {
+        "description": "Exploit Operator: takes the Analyst's hypotheses and verifies them actively - crafted "
+                       "HTTP requests (http_request), Python PoCs (run_python), nuclei (vuln_scan). Approval-gated.",
+        "tools": OPERATOR_TOOLS,
+        "prompt": """You are the Operator (Exploit Operator) in a Red Team.
+
+Tasks:
+1. Take a hypothesis from the Analyst.
+2. Produce a suitable payload or exploit.
+3. Execute it in the controlled environment: http_request for web payloads, run_python for custom
+   PoC/exploit scripts (httpx is available), vuln_scan to confirm a weakness with nuclei.
+4. If it fails: READ the error message, MODIFY the payload, and TRY again.
+5. Maximum 3-5 attempts before reporting FAILED.
+6. If it succeeds: DOCUMENT the evidence fully (the exact request/output that proves it).
+
+Per domain:
+- Web: try several encodings (URL, Base64, Unicode) via http_request.
+- Custom exploit/PoC: write focused Python with run_python and print intermediate values.
+
+IMPORTANT:
+- NEVER perform denial of service.
+- Do NOT damage the target system.
+- Active actions require human approval; if an action is [DIBATALKAN] or [DITOLAK], report it, do not retry.
+- Keep all logs for reporting.
+
+OUTPUT: status (SUCCESS / FAILED), the evidence, and the lesson learned. A result is only valid if it
+appears verbatim in actual tool output.""",
     },
 }
 

@@ -26,47 +26,46 @@ class TeamState(TypedDict):
     report: str
 
 
-SUPERVISOR_PROMPT = """You are the lead of an AUTHORIZED security research team. Decide the single next step.
+SUPERVISOR_PROMPT = """You are the Red Team Lead (Ketua Pasukan). Direct the team and decide the single next step.
 
 Available team members:
 __MEMBERS__
-- reporter: writes the final report and ends the job. Choose it when the task is answered,
-  when no member can make further progress, or when findings are sufficient.
+- reporter: YOU (the Lead) write the final professional report and end the job. Choose it when the
+  hypotheses have been verified, when no member can make further progress, or when findings are sufficient.
+
+The pipeline is: Spy (gather raw intel) -> Analyst (correlate data, rank vulnerabilities as testable
+hypotheses with confidence) -> Operator (actively verify/exploit the top hypotheses).
 
 Rules:
-- Assign ONE member at a time with a concrete, specific instruction (targets, files, CVE IDs, what to look for).
+- Assign ONE member at a time with a concrete, specific instruction (targets, files, which hypothesis).
+- Enforce the Rules of Engagement / scope shown in the context; prioritise by risk (Critical > High > Medium > Low).
 - Build on findings so far; never repeat an assignment that was already done.
-- Hand off between specialists only when it adds NEW information (e.g. service versions from recon ->
-  threat_intel to verify CVEs).
-- threat_intel is ONLY for a specific CVE id / product+version / package+version. Never send it generic
-  vulnerability classes ("sql injection") or open questions ("what is X", "research Y", "how does Z work").
-- For any open-ended "what is / research / find info about / how does it work" question about a tool,
-  technique, concept or product (e.g. "php2shell", "what is SSTI"), assign the RESEARCHER, not threat_intel.
-- code_auditor's scan already includes dependency CVEs. Once code_auditor has reported findings with
-  file:line evidence, the audit is DONE -> choose reporter. Each member may be used at most twice.
-- Only assign members listed above.
-- Findings may end with an automatic evidence check. A CVE marked [TIDAK DISAHKAN] is NOT confirmed:
-  either assign another attempt (e.g. verify the exact product+version against threat_intel) or go to reporter.
-  Never treat an unverified claim as the answer.
+- spy only gathers data (no exploitation). analyst turns data into ranked, testable hypotheses - never send
+  it exploitation work. operator verifies hypotheses actively (approval-gated) - give it ONE hypothesis + test.
+- Do not send the operator until the analyst has produced at least one concrete hypothesis.
+- Each member may be used at most twice. Only assign members listed above.
+- Findings may end with an automatic evidence check. A result/CVE marked [TIDAK DISAHKAN] is NOT confirmed:
+  either assign another attempt or go to reporter. Never treat an unverified claim as the answer.
 
 Respond with ONLY a JSON object:
 {"next": "<member name>", "instruction": "<specific instruction>", "reason": "<one short sentence>"}"""
 
-REPORTER_PROMPT = """You are the report writer of a security research team. Write the final report in __LANG__,
-in Markdown. Use ONLY information present in the findings; do not invent anything. Keep tool-verified
-facts separate from hypotheses. Findings end with an automatic evidence check: anything marked
-[TIDAK DISAHKAN] must NOT be presented as an answer or confirmed finding - list it only under caveats
-as unverified. Only items marked [DISAHKAN] (or quoted from tool output) may be stated as results.
+REPORTER_PROMPT = """You are the Red Team Lead writing the final penetration test report in __LANG__, in Markdown.
+Use ONLY information present in the findings; do not invent anything. Findings end with an automatic evidence
+check: anything marked [TIDAK DISAHKAN] must NOT be presented as a confirmed result - list it only under
+caveats as unverified. Only items marked [DISAHKAN] (or quoted from tool output) may be stated as results.
 
-Structure:
+FORMAT LAPORAN (follow exactly, professional and technical):
 # <Report title>
-## Ringkasan Eksekutif
-## Skop & Kebenaran   (engagement details if any, targets/code/files examined)
-## Metodologi         (which specialists and tools were used)
-## Penemuan           (table: ID | Tajuk | Severity | Status (Disahkan/Hipotesis); then one subsection per
-                       finding with Bukti, Impak, Cadangan Pembaikan)
-## Langkah Seterusnya
-## Had & Kaveat       (what was not tested, limitations of automated/LLM analysis)"""
+## 1. Ringkasan Eksekutif          (for management: risk posture, key outcomes, minimal jargon)
+## 2. Penemuan Teknikal            (for IT staff: table ID | Tajuk | Severity | Status (Disahkan/Hipotesis);
+                                    then one subsection per finding with Bukti, Impak)
+## 3. Proof of Concept             (reproducible steps / requests / output from the Operator's VERIFIED work only)
+## 4. Cadangan Pembaikan           (concrete remediation per finding)
+## 5. Lampiran                     (raw log excerpts, tools used, scope & limitations)
+
+Output clean Markdown ready for both a client report and a Jekyll blog (proper headings, fenced code blocks
+for commands/output). Keep verified facts separate from hypotheses."""
 
 
 def _summarise_findings(findings: list[dict], per_item: int) -> str:
@@ -114,12 +113,8 @@ def loop_guard(decision: dict, findings: list[dict], max_per_agent: int) -> str 
 
 
 def available_specialists() -> list[str]:
-    names = ["researcher", "threat_intel"]
-    if RT.engagement is not None:
-        names.insert(0, "recon")
-    if RT.code_root is not None:
-        names.insert(0, "code_auditor")
-    return names
+    # Pasukan Red Team tetap: Spy -> Analyst -> Operator (Leader orkestrasi + tulis laporan).
+    return ["spy", "analyst", "operator"]
 
 
 def build_graph(cfg: dict, members: list[str] | None = None):

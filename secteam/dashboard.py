@@ -17,10 +17,11 @@ RUNNING_IDLE_SECONDS = 300  # sesi tanpa session_end dan tiada aktiviti > 5 mini
 
 # Untuk log lama yang tiada medan 'agent' pada panggilan alat
 TOOL_AGENT = {
-    **{t: "recon" for t in ("dns_lookup", "rdap_lookup", "http_probe", "port_scan", "vuln_scan")},
-    **{t: "code_auditor" for t in ("scan_code", "list_files", "read_file", "search_code", "run_semgrep",
-                                   "run_bandit")},
-    **{t: "threat_intel" for t in ("cve_lookup", "cve_search", "osv_lookup", "kev_recent")},
+    **{t: "spy" for t in ("dns_lookup", "rdap_lookup", "http_probe", "port_scan", "web_search",
+                          "file_info", "extract_strings")},
+    **{t: "analyst" for t in ("cve_lookup", "cve_search", "osv_lookup", "kev_recent", "scan_code",
+                              "list_files", "read_file", "search_code", "run_semgrep", "run_bandit")},
+    **{t: "operator" for t in ("vuln_scan", "http_request", "run_python")},
 }
 
 

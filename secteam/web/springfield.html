@@ -220,8 +220,8 @@ pre .ok { color: var(--good-ink); font-weight: 700; } pre .bad { color: var(--ba
 <script>
 "use strict";
 const ACTOR = {
-  lead: ["LEAD", "--a-lead"], recon: ["RECON", "--a-recon"], code_auditor: ["CODE", "--a-code"],
-  threat_intel: ["INTEL", "--a-intel"], ctf_solver: ["CTF", "--a-ctf"], reporter: ["REPORTER", "--a-report"], sys: ["SYS", "--ink-soft"],
+  lead: ["LEAD", "--a-lead"], spy: ["SPY", "--a-recon"], analyst: ["ANALYST", "--a-intel"],
+  operator: ["OP", "--a-ctf"], reporter: ["REPORTER", "--a-report"], sys: ["SYS", "--ink-soft"],
 };
 const code = a => (ACTOR[a] || [String(a || "?").toUpperCase().slice(0, 7)])[0];
 const color = a => `var(${(ACTOR[a] || [0, "--ink-soft"])[1]})`;

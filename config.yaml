@@ -9,12 +9,11 @@ ollama:
 
 models:
   default: qwen2.5:7b
-  supervisor: qwen2.5:7b
-  recon: qwen2.5:7b
-  code_auditor: qwen2.5:7b
-  threat_intel: qwen2.5:7b
-  researcher: qwen2.5:7b
-  reporter: qwen2.5:7b
+  supervisor: qwen2.5:7b   # Leader (orkestrasi/routing)
+  reporter: qwen2.5:7b     # Leader (penulisan laporan)
+  spy: qwen2.5:7b          # Perisik
+  analyst: qwen2.5:7b      # Penyelidik kerentanan
+  operator: qwen2.5:7b     # Exploit operator
 
 # Memori skill: setiap pakar bina "playbook" teknik boleh guna semula yang berkembang antara run.
 # Hanya TEKNIK generalisasi disimpan (bukan fakta/data klien); skill relevan disuntik ke tugasan baru.

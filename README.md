@@ -1,40 +1,47 @@
 # secteam — Pasukan AI Security Research (open-source)
 
-Orkestrasi multi-agent menggunakan **LangGraph** + **Ollama** (model lokal). Lead/supervisor
-mengagih kerja kepada pakar, pakar guna alat sebenar, dan reporter tulis laporan Markdown.
+Orkestrasi multi-agent **Red Team** menggunakan **LangGraph** + **Ollama** (model lokal). **Leader**
+(Ketua Pasukan) mengagih kerja mengikut pipeline Spy → Analyst → Operator, dan Leader sendiri menulis
+laporan akhir (Markdown).
 
 ```
                  ┌────────────────────┐
-  tugasan ─────► │ Supervisor (Lead)  │◄───────────────────────────┐
-                 └─────────┬──────────┘                            │
-   ┌────────────┬──────────┼────────────┬───────────┐           │ hasil
-   ▼            ▼          ▼            ▼           ▼            │
- recon    code_auditor  threat_intel  researcher               │
- dns/rdap,  semgrep,     NVD, EPSS,    carian web               │
- http_probe,bandit,      CISA KEV,     (Tavily/                 │
- nmap,      read/search, OSV           Brave/DDG)               │
- nuclei     OSV                        + sumber                 │
-   └────────────┴──────────┬────────────┴───────────┘           │
-                           ▼                                       │
-                      Reporter ──► reports/*.md + *-findings.json ─┘
+  tugasan ─────► │   Leader (Ketua)   │◄───────────────────────────┐
+                 └─────────┬──────────┘                            │ hasil
+        ┌────────────┬─────┴──────┬──────────────┐                 │
+        ▼            ▼            ▼               │                 │
+      Spy ───────► Analyst ───► Operator         │                 │
+  risik mentah   analisis +   sahkan/exploit     │                 │
+  nmap, dns,     korelasi,    aktif: http_request│                 │
+  rdap, http,    CVE/OSV/KEV, run_python (PoC),  │                 │
+  web_search,    audit kod,   nuclei vuln_scan   │                 │
+  strings        hipotesis    (perlu kelulusan)  │                 │
+        └────────────┴────────────┴──────────────┘                 │
+                           ▼                                        │
+         Leader tulis laporan ──► reports/*.md + *-findings.json ──┘
 ```
 
-Setiap pakar ialah subgraph ReAct (model ↔ alat) dengan had pusingan sendiri.
+Pipeline: **Spy** kumpul data mentah (tiada serangan) → **Analyst** korelasi + hasilkan hipotesis boleh
+diuji dengan skor keyakinan → **Operator** sahkan/exploit secara aktif (gated kelulusan) → **Leader**
+prioriti ikut risiko & tulis laporan. Setiap ahli ialah subgraph ReAct (model ↔ alat) dengan had pusingan.
 
 ## Lapisan keselamatan
 
+> **Nota:** scope guard automatik (fail engagement wajib + semakan include/exclude) telah **dibuang** —
+> operator (anda) mengarahkan sasaran sendiri. `--engagement` masih boleh dimuatkan sebagai metadata
+> kebenaran untuk laporan, tetapi tidak lagi menyekat sasaran. Lapisan keselamatan yang kekal:
+
 | Lapisan | Apa yang berlaku |
 |---|---|
-| **Fail engagement** | Recon/scan hanya aktif jika `--engagement` dimuatkan: klien, siapa beri kebenaran, no. rujukan, tempoh sah. |
-| **Scope guard** | Setiap target disemak terhadap `include`/`exclude` (CIDR & wildcard domain). Hostname yang resolve ke IP dikecualikan akan ditolak. |
-| **Activity allowlist** | `passive_recon`, `web_probe`, `port_scan`, `vuln_scan`. Mana-mana yang tak disenaraikan ditolak. |
-| **Kelulusan manusia** | `port_scan`, `vuln_scan` minta pengesahan `y/N` (kecuali `--auto-approve`). |
-| **Tiada shell bebas** | Hanya binari allowlist (`nmap`, `nuclei`, `semgrep`, `bandit`) dengan argumen yang dibina oleh kod, bukan oleh model. |
-| **Audit log** | Semua keputusan supervisor, panggilan alat, penolakan skop dan kelulusan ke `logs/audit-YYYYMMDD.jsonl`. |
-| **Akses fail terhad** | Code auditor hanya boleh baca dalam `--code`. |
+| **Kelulusan manusia** | Tindakan aktif (`port_scan`, `vuln_scan`, `http_request`, `run_python`) minta pengesahan `y/N` (kecuali `--auto-approve`). Dalam mod bukan-interaktif ia **auto-ditolak**. |
+| **Audit log** | Semua keputusan Leader, panggilan alat, permintaan & kelulusan direkod ke `logs/audit-YYYYMMDD.jsonl`. |
+| **Operator mengarah** | Spy/Analyst tidak menyerang; hanya Operator melakukan tindakan aktif, satu hipotesis pada satu masa, tiada DoS. |
+| **Sandbox pelaksanaan** | `run_python` jalan terasing (`python -I`) dalam `workspace/sandbox`. Jalankan secteam dalam **VM** (ia melaksanakan exploit sebenar). |
+| **Akses fail audit** | Alat audit kod Analyst hanya baca dalam `--code`. |
 
-> Gunakan hanya pada sistem yang anda miliki atau ada **kebenaran bertulis**. Scan tanpa kebenaran
-> ialah kesalahan di bawah Akta Jenayah Komputer 1997 (Malaysia) dan undang-undang setara.
+> Gunakan hanya pada sistem yang anda miliki atau ada **kebenaran bertulis**. Tanpa scope guard automatik,
+> tanggungjawab memastikan sasaran dibenarkan kini sepenuhnya pada anda. Scan/exploit tanpa kebenaran ialah
+> kesalahan di bawah Akta Jenayah Komputer 1997 (Malaysia) dan undang-undang setara.
 
 ## Pemasangan (Windows)
 
@@ -72,35 +79,37 @@ Pilihan: tetapkan `$env:NVD_API_KEY` (percuma dari nvd.nist.gov) supaya had kada
 secteam cve CVE-2024-3400
 secteam run "Apakah CVE yang dieksploitasi aktif bulan ini yang melibatkan VPN appliance?"
 
-# Research maklumat am (carian web + sumber) - untuk soalan "apa itu X", bukan CVE
+# Research / OSINT (carian web + sumber, oleh Spy) - soalan "apa itu X"
 secteam research "apa itu php2shell"
 secteam research "macam mana SSTI dieksploitasi dalam Jinja2"
 
-# Code audit
+# Code audit (oleh Analyst)
 secteam audit C:\projek\webapp --focus "authentication dan SQL injection"
 
-# Pentest lab (perlu engagement)
-secteam check-scope engagements\example-lab.yaml 192.168.56.101
-secteam run "Lakukan penilaian keselamatan ke atas 192.168.56.101" -e engagements\example-lab.yaml
+# Pentest penuh: Spy -> Analyst -> Operator -> Leader tulis laporan.
+# Operator minta kelulusan y/N untuk setiap tindakan aktif (scan/exploit).
+secteam run "Lakukan penilaian keselamatan ke atas http://192.168.56.101"
 
-# Gabungan: audit kod + semak servis yang menjalankan kod itu
-secteam run "Audit kod ini dan sahkan sama ada servis di 192.168.56.101 terdedah" `
-  -c C:\projek\webapp -e engagements\example-lab.yaml
+# Hands-off pada sasaran yang anda ADA kebenaran (langkau prompt kelulusan):
+secteam run "Pentest http://192.168.56.101" --auto-approve
+
+# Gabungan: audit kod + sahkan servis yang menjalankan kod itu
+secteam run "Audit kod ini dan sahkan sama ada servis di 192.168.56.101 terdedah" -c C:\projek\webapp
 ```
 
-Output: `reports\<masa>-<tugasan>.md` (laporan) dan `-findings.json` (bukti mentah setiap pakar).
+Output: `reports\<masa>-<tugasan>.md` (laporan) dan `-findings.json` (bukti mentah setiap ahli).
 
-### Carian web (pakar `researcher`)
+### Carian web / OSINT (alat `web_search`, oleh Spy)
 
-`secteam research` (dan `run` untuk soalan "apa itu X") guna carian web dan menjawab **hanya dari hasil
-carian, dengan URL sumber sebenar** dalam laporan. Pembekal dipilih automatik ikut kunci dalam environment:
+`secteam research` (dan Spy dalam `run`) guna carian web dan menjawab **hanya dari hasil carian, dengan
+URL sumber sebenar**. Pembekal dipilih automatik ikut kunci dalam environment:
 
 - **DuckDuckGo** — lalai, tiada kunci, terus jalan (kadang kena had kadar bila kerap).
 - **Tavily** — lebih dipercayai, percuma ~1000/bulan: `setx TAVILY_API_KEY "tvly-..."` (buka terminal baru selepas itu).
 - **Brave** — percuma ~2000/bulan: `setx BRAVE_API_KEY "BSA-..."`.
 
-Researcher melaporkan apa yang ada di web; kualiti bergantung pada sumber. Sentiasa klik URL sumber dalam
-laporan untuk sahkan — ini BUKAN threat_intel (yang guna NVD untuk CVE spesifik).
+Spy melaporkan apa yang ada di web; kualiti bergantung pada sumber. Untuk CVE spesifik, Analyst guna NVD/OSV
+(bukan carian web).
 
 Tanpa aktifkan venv: guna pelancar `.\secteam <arahan>` dari folder projek (fail `secteam.cmd`).
 
@@ -125,7 +134,7 @@ Setiap pakar membina **playbook** teknik boleh guna semula yang berkembang antar
 
 ```powershell
 .\secteam skills                 # lihat playbook semua pakar
-.\secteam skills code_auditor    # satu pakar sahaja
+.\secteam skills analyst         # satu ahli sahaja (spy/analyst/operator)
 .\secteam skills --forget        # kosongkan semua playbook
 ```
 
@@ -151,12 +160,13 @@ Cara ia bekerja:
 - Model 14B (cth. `qwen2.5:14b`, ~9 GB) akan offload sebahagian ke CPU: lebih pintar, lebih perlahan.
 - `orchestration.max_steps` / `max_tool_rounds`: had untuk elak gelung tanpa henti.
 
-## Menambah pakar baru
+## Menambah ahli / alat baru
 
-1. Tulis alat dalam `secteam/tools/<nama>.py` dengan `@tool` + `@guarded` (dan `_eng().check()` +
-   `require_approval()` untuk apa-apa yang menyentuh target).
-2. Daftar dalam `SPECIALISTS` di `secteam/agents.py` (description, tools, prompt).
-3. Tambah nama ke `available_specialists()` dalam `secteam/graph.py`.
+1. Tulis alat dalam `secteam/tools/<nama>.py` dengan `@tool` + `@guarded` (dan `require_approval()`
+   untuk tindakan aktif yang menyentuh target). Masukkan ke kumpulan `SPY_TOOLS` / `ANALYST_TOOLS` /
+   `OPERATOR_TOOLS` dalam `secteam/tools/__init__.py`.
+2. Daftar ahli dalam `SPECIALISTS` di `secteam/agents.py` (description, tools, prompt).
+3. Tambah nama ke `available_specialists()` dalam `secteam/graph.py` dan peta `TOOL_AGENT` di `dashboard.py`.
 
 ## Had yang perlu diketahui
 

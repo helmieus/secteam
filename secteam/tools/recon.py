@@ -1,13 +1,12 @@
-"""Alat recon / pentest. SEMUA disemak terhadap engagement; aktif = perlu kelulusan."""
+"""Alat recon untuk Spy. Scope guard dibuang (operator arah sendiri); tindakan aktif kekal perlu kelulusan."""
 import json
 import re
 import socket
+from urllib.parse import urlparse
 
 import httpx
 from langchain_core.tools import tool
 
-from ..runtime import RT
-from ..scope import ScopeError
 from .common import guarded, require_approval
 from .shell import run_proc
 
@@ -20,19 +19,22 @@ SECURITY_HEADERS = (
 UA = {"User-Agent": "secteam-authorized-assessment/0.1"}
 
 
-def _eng():
-    if RT.engagement is None:
-        raise ScopeError(
-            "Tiada fail engagement dimuatkan. Recon/scan memerlukan --engagement dengan kebenaran bertulis."
-        )
-    return RT.engagement
+def _host(target: str) -> str:
+    """Ambil host bersih daripada URL / host:port / IP (tanpa semakan skop)."""
+    t = (target or "").strip()
+    if not t or t.startswith("-"):
+        raise ValueError(f"Target tidak sah: {target!r}")
+    if "://" in t or "/" not in t:
+        parsed = urlparse(t if "://" in t else "//" + t)
+        return (parsed.hostname or t).rstrip(".")
+    return t
 
 
 @tool
 @guarded
 def dns_lookup(host: str) -> str:
-    """Resolve DNS (A/AAAA records) for an in-scope hostname. Passive and low impact."""
-    h = _eng().check(host, "passive_recon")
+    """Resolve DNS (A/AAAA records) for a hostname. Passive and low impact."""
+    h = _host(host)
     ips = sorted({i[4][0] for i in socket.getaddrinfo(h, None)})
     return f"{h} -> {', '.join(ips) or 'tiada rekod'}"
 
@@ -40,8 +42,8 @@ def dns_lookup(host: str) -> str:
 @tool
 @guarded
 def rdap_lookup(domain: str) -> str:
-    """Get domain registration data (RDAP/WHOIS: registrar, dates, nameservers) for an in-scope domain."""
-    d = _eng().check(domain, "passive_recon")
+    """Get domain registration data (RDAP/WHOIS: registrar, dates, nameservers) for a domain."""
+    d = _host(domain)
     r = httpx.get(f"https://rdap.org/domain/{d}", follow_redirects=True, timeout=20, headers=UA)
     r.raise_for_status()
     j = r.json()
@@ -61,9 +63,8 @@ def rdap_lookup(domain: str) -> str:
 @tool
 @guarded
 def http_probe(url: str) -> str:
-    """Send ONE GET request to an in-scope URL and report status, redirect, server banner,
+    """Send ONE GET request to a URL and report status, redirect, server banner, technology,
     security headers present/missing, cookie flags and page title. Does not follow redirects."""
-    _eng().check(url, "web_probe")
     if "://" not in url:
         url = "http://" + url
     with httpx.Client(follow_redirects=False, timeout=15, verify=False, headers=UA) as c:
@@ -88,11 +89,10 @@ def http_probe(url: str) -> str:
 
 @tool
 @guarded
-def port_scan(target: str, ports: str = "top100", service_detection: bool = False) -> str:
-    """TCP connect port scan (nmap -sT) of an in-scope host or CIDR.
+def port_scan(target: str, ports: str = "top100", service_detection: bool = True) -> str:
+    """TCP connect port scan (nmap -sT) of a host or CIDR, for service detection / endpoint discovery.
     ports: 'top100', 'top1000', or a list like '22,80,443,8000-8100'.
     service_detection=True adds version detection (-sV). Requires human approval."""
-    t = _eng().check(target, "port_scan")
     args = ["nmap", "-Pn", "-sT", "-T3", "--max-retries", "2", "--host-timeout", "15m"]
     if ports in ("top100", "top1000"):
         args += ["--top-ports", ports[3:]]
@@ -102,7 +102,7 @@ def port_scan(target: str, ports: str = "top100", service_detection: bool = Fals
         raise ValueError("Format ports tidak sah. Guna 'top100', 'top1000' atau '22,80,8000-8100'.")
     if service_detection:
         args.append("-sV")
-    args.append(t)
+    args.append(_host(target))
     require_approval("port_scan", " ".join(args))
     p = run_proc(args, timeout=1800)
     return p.stdout + (f"\n[stderr]\n{p.stderr[-1500:]}" if p.returncode else "")
@@ -111,9 +111,8 @@ def port_scan(target: str, ports: str = "top100", service_detection: bool = Fals
 @tool
 @guarded
 def vuln_scan(target: str, severity: str = "medium,high,critical") -> str:
-    """Run nuclei vulnerability templates (rate limited) against an in-scope URL or host.
+    """Run nuclei vulnerability templates (rate limited) against a URL or host to verify weaknesses.
     severity: comma list from info,low,medium,high,critical. Requires human approval."""
-    _eng().check(target, "vuln_scan")
     sev = [s.strip() for s in severity.split(",") if s.strip() in SEVERITIES] or ["medium", "high", "critical"]
     args = [
         "nuclei", "-target", target.strip(), "-severity", ",".join(sev),
