@@ -7,14 +7,14 @@ mengagih kerja kepada pakar, pakar guna alat sebenar, dan reporter tulis laporan
                  ┌────────────────────┐
   tugasan ─────► │ Supervisor (Lead)  │◄───────────────────────────┐
                  └─────────┬──────────┘                            │
-   ┌────────────┬──────────┼───────────┬────────────┬───────────┐ │ hasil
-   ▼            ▼          ▼           ▼            ▼           ▼ │
- recon    code_auditor  threat_intel  researcher  ctf_solver     │
- dns/rdap,  semgrep,     NVD, EPSS,    carian web  decode, xor,   │
- http_probe,bandit,      CISA KEV,     (Tavily/    file_inspect,  │
- nmap,      read/search, OSV           Brave/DDG)  run_python     │
- nuclei     OSV                        + sumber                   │
-   └────────────┴──────────┬───────────┴────────────┴───────────┘ │
+   ┌────────────┬──────────┼────────────┬───────────┐           │ hasil
+   ▼            ▼          ▼            ▼           ▼            │
+ recon    code_auditor  threat_intel  researcher               │
+ dns/rdap,  semgrep,     NVD, EPSS,    carian web               │
+ http_probe,bandit,      CISA KEV,     (Tavily/                 │
+ nmap,      read/search, OSV           Brave/DDG)               │
+ nuclei     OSV                        + sumber                 │
+   └────────────┴──────────┬────────────┴───────────┘           │
                            ▼                                       │
                       Reporter ──► reports/*.md + *-findings.json ─┘
 ```
@@ -28,10 +28,10 @@ Setiap pakar ialah subgraph ReAct (model ↔ alat) dengan had pusingan sendiri.
 | **Fail engagement** | Recon/scan hanya aktif jika `--engagement` dimuatkan: klien, siapa beri kebenaran, no. rujukan, tempoh sah. |
 | **Scope guard** | Setiap target disemak terhadap `include`/`exclude` (CIDR & wildcard domain). Hostname yang resolve ke IP dikecualikan akan ditolak. |
 | **Activity allowlist** | `passive_recon`, `web_probe`, `port_scan`, `vuln_scan`. Mana-mana yang tak disenaraikan ditolak. |
-| **Kelulusan manusia** | `port_scan`, `vuln_scan`, `run_python` minta pengesahan `y/N` (kecuali `--auto-approve`). |
+| **Kelulusan manusia** | `port_scan`, `vuln_scan` minta pengesahan `y/N` (kecuali `--auto-approve`). |
 | **Tiada shell bebas** | Hanya binari allowlist (`nmap`, `nuclei`, `semgrep`, `bandit`) dengan argumen yang dibina oleh kod, bukan oleh model. |
 | **Audit log** | Semua keputusan supervisor, panggilan alat, penolakan skop dan kelulusan ke `logs/audit-YYYYMMDD.jsonl`. |
-| **Akses fail terhad** | Code auditor hanya boleh baca dalam `--code`; CTF hanya dalam `--files`. |
+| **Akses fail terhad** | Code auditor hanya boleh baca dalam `--code`. |
 
 > Gunakan hanya pada sistem yang anda miliki atau ada **kebenaran bertulis**. Scan tanpa kebenaran
 > ialah kesalahan di bawah Akta Jenayah Komputer 1997 (Malaysia) dan undang-undang setara.
@@ -79,10 +79,6 @@ secteam research "macam mana SSTI dieksploitasi dalam Jinja2"
 # Code audit
 secteam audit C:\projek\webapp --focus "authentication dan SQL injection"
 
-# CTF
-secteam ctf "Ciphertext: Gur synt vf pgs{ebg13_vf_rnfl}"
-secteam ctf "Fail misteri, cari flag" --files .\challenges\forensics1
-
 # Pentest lab (perlu engagement)
 secteam check-scope engagements\example-lab.yaml 192.168.56.101
 secteam run "Lakukan penilaian keselamatan ke atas 192.168.56.101" -e engagements\example-lab.yaml
@@ -122,6 +118,30 @@ Tanpa aktifkan venv: guna pelancar `.\secteam <arahan>` dari folder projek (fail
 - Dikemas kini secara langsung setiap 2.5 saat semasa run berjalan; biarkan ia terbuka dalam tab lain.
 - Hanya bind ke `127.0.0.1` (log mengandungi data engagement). Sumber data: `logs\audit-*.jsonl`.
 
+## Memori skill (playbook)
+
+Setiap pakar membina **playbook** teknik boleh guna semula yang berkembang antara run — supaya pasukan
+"belajar" dari masa ke masa (penting kerana cybersecurity sentiasa berubah).
+
+```powershell
+.\secteam skills                 # lihat playbook semua pakar
+.\secteam skills code_auditor    # satu pakar sahaja
+.\secteam skills --forget        # kosongkan semua playbook
+```
+
+Cara ia bekerja:
+- Selepas setiap tugasan, pakar mereflek dan menyimpan 0-2 **teknik generalisasi** (cth. "untuk rantaian
+  finding HIGH, sahkan input sampai ke baris itu dulu"). Pada run akan datang, skill yang relevan disuntik ke dalam tugasan pakar.
+- **Guardrail keselamatan:** hanya teknik disimpan, BUKAN fakta mudah basi atau data klien. Penapis menolak
+  apa-apa yang mengandungi IP, flag, hash, rahsia, atau sasaran engagement. Skill hanya dipelajari daripada
+  hasil yang **tidak** ditanda `[TIDAK DISAHKAN]`.
+- Disimpan sebagai JSONL boleh baca di `memory/<pakar>.jsonl` — semak dan buang bila-bila.
+- Tetapan dalam `config.yaml` bawah `memory:` (set `enabled: false` untuk matikan, `reflect: false` untuk
+  langkau langkah pembelajaran dan jadi lebih laju).
+
+> Memori ini **global** (merentas engagement), jadi ia sengaja hanya simpan teknik umum. Data khusus setiap
+> engagement kekal dalam `reports/` sahaja, tidak pernah masuk playbook.
+
 ## Konfigurasi (`config.yaml`)
 
 - `models.*`: model untuk setiap peranan. Model mesti menyokong **tool calling** di Ollama
@@ -142,6 +162,4 @@ Tanpa aktifkan venv: guna pelancar `.\secteam <arahan>` dari folder projek (fail
 
 - Model 7B boleh berhalusinasi. Semak bukti dalam `-findings.json` sebelum percaya laporan.
   Prompt memaksa label "HYPOTHESIS" untuk perkara yang belum disahkan, tapi itu bukan jaminan.
-- `run_python` (CTF) **bukan sandbox sebenar**: ia jalan sebagai user anda, cuma dengan kelulusan dan
-  timeout. Untuk fail CTF yang tidak dipercayai, jalankan secteam dalam VM/WSL/Docker.
 - `http_probe` guna `verify=False` (TLS tidak disahkan) kerana target lab biasanya self-signed.

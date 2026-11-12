@@ -10,7 +10,8 @@ from typing import Annotated, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
-from .agents import SPECIALISTS, build_specialist, clean_text, make_llm, run_specialist
+from .agents import SPECIALISTS, build_specialist, clean_text, make_llm, reflect_skills, run_specialist
+from .memory import SkillStore
 from .runtime import RT
 from .ui import console
 
@@ -44,8 +45,8 @@ Rules:
 - code_auditor's scan already includes dependency CVEs. Once code_auditor has reported findings with
   file:line evidence, the audit is DONE -> choose reporter. Each member may be used at most twice.
 - Only assign members listed above.
-- Findings may end with an automatic evidence check. A flag/CVE marked [TIDAK DISAHKAN] is NOT solved:
-  either assign another attempt (e.g. "use auto_solve / run_python reading the file by path") or go to reporter.
+- Findings may end with an automatic evidence check. A CVE marked [TIDAK DISAHKAN] is NOT confirmed:
+  either assign another attempt (e.g. verify the exact product+version against threat_intel) or go to reporter.
   Never treat an unverified claim as the answer.
 
 Respond with ONLY a JSON object:
@@ -113,7 +114,7 @@ def loop_guard(decision: dict, findings: list[dict], max_per_agent: int) -> str 
 
 
 def available_specialists() -> list[str]:
-    names = ["researcher", "threat_intel", "ctf_solver"]
+    names = ["researcher", "threat_intel"]
     if RT.engagement is not None:
         names.insert(0, "recon")
     if RT.code_root is not None:
@@ -128,6 +129,12 @@ def build_graph(cfg: dict, members: list[str] | None = None):
     max_rounds = orch.get("max_tool_rounds", 12)
     max_per_agent = orch.get("max_calls_per_agent", 2)
     lang = cfg.get("report_language", "Bahasa Melayu")
+
+    mem_cfg = cfg.get("memory", {})
+    mem = SkillStore(mem_cfg.get("dir", "memory"), mem_cfg.get("max_per_agent", 60)) \
+        if mem_cfg.get("enabled", True) else None
+    mem_k = mem_cfg.get("recall_k", 3)
+    mem_reflect = mem_cfg.get("reflect", True)
 
     sup_llm = make_llm(cfg, "supervisor", json_mode=True)
     rep_llm = make_llm(cfg, "reporter")
@@ -162,19 +169,38 @@ def build_graph(cfg: dict, members: list[str] | None = None):
         sub = build_specialist(cfg, name)
 
         def node(state: TeamState):
+            assignment = state["instruction"] or state["task"]
+            # BACA: suntik playbook (skill relevan dari run lepas) ke dalam tugasan pakar
+            playbook = ""
+            recalled: list[dict] = []
+            if mem is not None:
+                recalled = mem.recall(name, f"{state['task']} {assignment}", mem_k)
+                playbook = mem.format_playbook(recalled)
             msg = (
-                f"Overall task: {state['task']}\n\nContext:\n{state['context']}\n\n"
-                f"Your assignment from the lead:\n{state['instruction'] or state['task']}\n\n"
+                (playbook + "\n\n" if playbook else "")
+                + f"Overall task: {state['task']}\n\nContext:\n{state['context']}\n\n"
+                f"Your assignment from the lead:\n{assignment}\n\n"
                 f"Relevant findings from teammates:\n{_summarise_findings(state['findings'], 3500)}"
             )
             RT.audit.agent = name
-            RT.audit.log("specialist_start", instruction=state["instruction"])
+            RT.audit.log("specialist_start", instruction=state["instruction"],
+                         playbook=[s["title"] for s in recalled] or None)
             try:
                 result = run_specialist(sub, name, msg, max_rounds)
             finally:
                 RT.audit.agent = None
+            unverified = "[TIDAK DISAHKAN]" in result
             RT.audit.log("specialist_result", agent=name, chars=len(result), result=result[:8000],
-                         unverified="[TIDAK DISAHKAN]" in result)
+                         unverified=unverified)
+            # TULIS: belajar skill generalisasi - hanya jika hasil tidak ditanda tak sah
+            if mem is not None and mem_reflect and not unverified:
+                if recalled:
+                    mem.bump_uses(name, [s["title"] for s in recalled])
+                for sk in reflect_skills(cfg, name, assignment, result):
+                    saved = mem.remember(name, sk["title"], sk["trigger"], sk["lesson"])
+                    if saved:
+                        RT.audit.log("skill_learned", agent=name, title=saved)
+                        console.print(f"  [dim]playbook {name}: +{saved}[/]")
             return {"findings": [{"agent": name, "instruction": state["instruction"], "result": result}]}
 
         return node

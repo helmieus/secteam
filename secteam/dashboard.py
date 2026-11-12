@@ -21,8 +21,6 @@ TOOL_AGENT = {
     **{t: "code_auditor" for t in ("scan_code", "list_files", "read_file", "search_code", "run_semgrep",
                                    "run_bandit")},
     **{t: "threat_intel" for t in ("cve_lookup", "cve_search", "osv_lookup", "kev_recent")},
-    **{t: "ctf_solver" for t in ("auto_solve", "list_ctf_files", "file_inspect", "decode", "caesar_bruteforce",
-                                 "xor_bruteforce", "hash_identify", "run_python")},
 }
 
 

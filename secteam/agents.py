@@ -12,7 +12,7 @@ from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from .config import model_for
-from .tools import CTF_TOOLS, INTEL_TOOLS, RECON_TOOLS, RESEARCH_TOOLS, SAST_TOOLS
+from .tools import INTEL_TOOLS, RECON_TOOLS, RESEARCH_TOOLS, SAST_TOOLS
 from .tools.intel import osv_lookup
 from .ui import console
 
@@ -76,19 +76,6 @@ ONLY look up CVE IDs, products, packages and versions that appear in your assign
 findings - never invent package names or versions. Make at most 4 tool calls per turn and never repeat
 a call. Only cite CVE IDs that appear in tool output.""",
     },
-    "ctf_solver": {
-        "description": "CTF challenge solving: crypto, encoding, forensics files, scripting; finds the flag.",
-        "tools": CTF_TOOLS,
-        "prompt": """You are the CTF Solver.
-Step 1: list_ctf_files, then call auto_solve with the file PATH (it reads the file itself and tries all
-decoding/XOR chains). If auto_solve reports "FLAG DIJUMPAI", that is the answer - report it verbatim.
-Otherwise inspect with file_inspect, try caesar_bruteforce / hash_identify, then write focused Python
-with run_python that READS THE FILE BY ITS ABSOLUTE PATH (print intermediate values).
-CRITICAL: never retype, transcribe or "clean up" data yourself between tools - you will corrupt it.
-Pass file paths, or copy tool output exactly. A flag is only valid if it appears verbatim in a tool
-output. If no tool output contains a flag, say "flag not found" and describe what was tried.
-NEVER guess, complete or repair a partial flag.""",
-    },
 }
 
 
@@ -112,6 +99,41 @@ def make_llm(cfg: dict, role: str, json_mode: bool = False) -> ChatOllama:
     if json_mode:
         kwargs["format"] = "json"
     return ChatOllama(**kwargs)
+
+
+REFLECT_PROMPT = """You just finished a security task as the {role} specialist.
+Extract 0 to 2 REUSABLE, GENERALISABLE techniques you (or a teammate in this role) could apply to FUTURE,
+DIFFERENT tasks - a growing playbook. Think "how to approach X", not one-off facts.
+
+STRICT rules:
+- Only GENERAL methods/heuristics/tool-usage patterns. NOT findings about this specific target.
+- NEVER include target names, IPs, hostnames, client names, flags, hashes, secrets, or a claim that a
+  specific CVE affects a specific product (those go stale). Techniques only.
+- Only extract a lesson if the work actually demonstrated it (grounded in tool output), not speculation.
+- If nothing reusable was learned, return an empty list.
+
+Return ONLY JSON: {{"skills": [{{"title": "...", "trigger": "keywords when this applies", "lesson": "the technique in 1-2 sentences"}}]}}"""
+
+
+def reflect_skills(cfg: dict, role: str, task: str, result: str) -> list[dict]:
+    """Minta model distil 0-2 skill generalisasi daripada kerja pakar. Pulangkan senarai dict."""
+    llm = make_llm(cfg, role, json_mode=True)
+    msg = HumanMessage(f"TASK:\n{task}\n\nWHAT YOU DID AND FOUND:\n{result[:4000]}")
+    try:
+        raw = clean_text(llm.invoke([SystemMessage(REFLECT_PROMPT.format(role=role)), msg]).content)
+    except Exception:  # noqa: BLE001 - refleksi tak boleh runtuhkan run
+        return []
+    data = None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        data = next((o for o in _iter_json_objects(raw) if isinstance(o, dict) and "skills" in o), None)
+    skills = data.get("skills", []) if isinstance(data, dict) else []
+    out = []
+    for s in skills[:2]:
+        if isinstance(s, dict) and s.get("title") and s.get("lesson"):
+            out.append({"title": str(s["title"]), "trigger": str(s.get("trigger", "")), "lesson": str(s["lesson"])})
+    return out
 
 
 def _iter_json_objects(text: str):

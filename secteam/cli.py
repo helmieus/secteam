@@ -25,13 +25,12 @@ app = typer.Typer(help="Pasukan AI security research (LangGraph + Ollama).", no_
 
 EngOpt = typer.Option(None, "--engagement", "-e", help="Fail YAML engagement (wajib untuk recon/scan).")
 CodeOpt = typer.Option(None, "--code", "-c", help="Direktori kod sumber untuk diaudit.")
-FilesOpt = typer.Option(None, "--files", "-f", help="Direktori fail cabaran CTF.")
 AutoOpt = typer.Option(False, "--auto-approve", help="Luluskan tindakan aktif secara automatik (BERHATI-HATI).")
 StepsOpt = typer.Option(None, "--max-steps", help="Override had langkah supervisor.")
 CfgOpt = typer.Option(DEFAULT_CONFIG, "--config", help="Fail konfigurasi.")
 
 
-def _setup(cfg_path: Path, engagement: Optional[Path], code: Optional[Path], files: Optional[Path],
+def _setup(cfg_path: Path, engagement: Optional[Path], code: Optional[Path],
            auto_approve: bool) -> dict:
     cfg = load_config(cfg_path)
     paths = cfg.get("paths", {})
@@ -53,16 +52,12 @@ def _setup(cfg_path: Path, engagement: Optional[Path], code: Optional[Path], fil
         if not code.is_dir():
             raise typer.BadParameter(f"{code} bukan direktori")
         RT.code_root = code.resolve()
-    if files:
-        if not files.is_dir():
-            raise typer.BadParameter(f"{files} bukan direktori")
-        RT.files_root = files.resolve()
     if auto_approve and RT.engagement:
         console.print("[bold red]AMARAN:[/] --auto-approve aktif; scan akan berjalan tanpa pengesahan.")
     RT.audit.log("session_start", engagement=getattr(RT.engagement, "path", None),
                  engagement_name=getattr(RT.engagement, "name", None),
                  code=str(RT.code_root) if RT.code_root else None,
-                 files=str(RT.files_root) if RT.files_root else None, auto_approve=auto_approve)
+                 auto_approve=auto_approve)
     return cfg
 
 
@@ -74,8 +69,6 @@ def _context() -> str:
         parts.append("No engagement loaded: active recon/scanning is NOT authorized.")
     if RT.code_root:
         parts.append(f"Source code available for audit at: {RT.code_root}")
-    if RT.files_root:
-        parts.append(f"CTF challenge files available at: {RT.files_root}")
     return "\n".join(parts)
 
 
@@ -146,10 +139,10 @@ def _execute(task: str, cfg: dict, max_steps: Optional[int], members: Optional[l
 
 @app.command()
 def run(task: str = typer.Argument(..., help="Tugasan dalam bahasa biasa."),
-        engagement: Optional[Path] = EngOpt, code: Optional[Path] = CodeOpt, files: Optional[Path] = FilesOpt,
+        engagement: Optional[Path] = EngOpt, code: Optional[Path] = CodeOpt,
         auto_approve: bool = AutoOpt, max_steps: Optional[int] = StepsOpt, config: Path = CfgOpt):
     """Jalankan pasukan penuh: supervisor akan mengagih kerja kepada pakar yang sesuai."""
-    cfg = _setup(config, engagement, code, files, auto_approve)
+    cfg = _setup(config, engagement, code, auto_approve)
     _execute(task, cfg, max_steps)
 
 
@@ -158,7 +151,7 @@ def audit(path: Path = typer.Argument(..., help="Direktori kod sumber."),
           focus: str = typer.Option("", help="Fokus tambahan, cth. 'authentication dan SQL'."),
           max_steps: Optional[int] = StepsOpt, config: Path = CfgOpt):
     """Audit keselamatan kod sumber (SAST + semakan manual + CVE dependency)."""
-    cfg = _setup(config, None, path, None, False)
+    cfg = _setup(config, None, path, False)
     task = ("Perform a thorough security code audit of the provided source code. Find and verify "
             "vulnerabilities, check dependencies for known CVEs, and prioritise by severity.")
     # scan_code sudah merangkumi semakan CVE dependency (OSV), jadi audit hanya perlukan code_auditor.
@@ -170,7 +163,7 @@ def audit(path: Path = typer.Argument(..., help="Direktori kod sumber."),
 def cve(query: str = typer.Argument(..., help="ID CVE, produk, atau soalan threat intel."),
         config: Path = CfgOpt):
     """Analisis threat intel untuk CVE / produk."""
-    cfg = _setup(config, None, None, None, False)
+    cfg = _setup(config, None, None, False)
     _execute(f"Threat intelligence analysis: {query}. Assess severity, exploitation status and mitigation.",
              cfg, 3, members=["threat_intel"])
 
@@ -179,16 +172,42 @@ def cve(query: str = typer.Argument(..., help="ID CVE, produk, atau soalan threa
 def research(query: str = typer.Argument(..., help="Soalan maklumat am (cth. 'apa itu php2shell')."),
              config: Path = CfgOpt):
     """Cari maklumat di internet dengan sumber (bukan CVE: tool, teknik, konsep, produk)."""
-    cfg = _setup(config, None, None, None, False)
+    cfg = _setup(config, None, None, False)
     _execute(f"Research this and report factually with sources: {query}", cfg, 3, members=["researcher"])
 
 
 @app.command()
-def ctf(challenge: str = typer.Argument(..., help="Penerangan cabaran CTF (boleh termasuk ciphertext)."),
-        files: Optional[Path] = FilesOpt, auto_approve: bool = AutoOpt, config: Path = CfgOpt):
-    """Selesaikan cabaran CTF."""
-    cfg = _setup(config, None, None, files, auto_approve)
-    _execute(f"Solve this CTF challenge and recover the flag:\n{challenge}", cfg, 4, members=["ctf_solver"])
+def skills(agent: Optional[str] = typer.Argument(None, help="Nama pakar (kosong = semua)."),
+           forget: bool = typer.Option(False, "--forget", help="Kosongkan playbook pakar (atau semua)."),
+           config: Path = CfgOpt):
+    """Lihat atau kosongkan playbook skill yang dipelajari setiap pakar."""
+    from .memory import SkillStore
+
+    cfg = load_config(config)
+    mem_cfg = cfg.get("memory", {})
+    store = SkillStore(mem_cfg.get("dir", "memory"), mem_cfg.get("max_per_agent", 60))
+    from .agents import SPECIALISTS
+
+    agents = [agent] if agent else sorted(SPECIALISTS)
+    if forget:
+        for a in agents:
+            p = store._path(a)
+            if p.exists():
+                p.unlink()
+                console.print(f"[yellow]Playbook {a} dikosongkan.[/]")
+        return
+    total = 0
+    for a in agents:
+        sk = store.all(a)
+        if not sk:
+            continue
+        total += len(sk)
+        console.print(f"\n[bold cyan]{a}[/] ({len(sk)} skill):")
+        for s in sorted(sk, key=lambda s: s.get("uses", 0), reverse=True):
+            console.print(f"  [green]•[/] {s['title']}  [dim](guna {s.get('uses', 0)}x, {s.get('added', '')})[/]")
+            console.print(f"    [dim]{s['lesson']}[/]")
+    if total == 0:
+        console.print("Tiada skill dipelajari lagi. Jalankan beberapa tugasan dahulu.")
 
 
 @app.command("check-scope")

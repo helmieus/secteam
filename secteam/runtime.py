@@ -15,7 +15,6 @@ if TYPE_CHECKING:
 class Runtime:
     engagement: "Engagement | None" = None
     code_root: Path | None = None
-    files_root: Path | None = None
     sandbox_dir: Path = Path("workspace/sandbox")
     auto_approve: bool = False
     max_tool_output: int = 6000

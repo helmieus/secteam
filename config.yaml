@@ -2,24 +2,28 @@
 ollama:
   base_url: http://localhost:11434
   temperature: 0.2
-  num_ctx: 16384        # Ollama default hanya 2-4k; 16k selesa untuk 7B dalam 8GB VRAM
+  num_ctx: 16384        
   num_predict: 2048     # had token keluaran setiap panggilan (elak gelung ulangan)
   repeat_penalty: 1.1
   keep_alive: 30m
 
-# Model untuk setiap peranan. Semua mesti menyokong tool calling di Ollama.
-# Tip (8GB VRAM): dua model 7B tak muat serentak -> Ollama akan swap setiap kali
-# peranan bertukar (beberapa saat). Guna satu model untuk semua jika mahu laju.
 models:
   default: qwen2.5:7b
   supervisor: qwen2.5:7b
-  reporter: qwen2.5:7b
   recon: qwen2.5:7b
-  threat_intel: qwen2.5:7b
-  # qwen2.5-coder:7b TIDAK disyorkan: di Ollama ia menulis tool call sebagai teks JSON
-  # (ada penghurai sandaran dalam agents.py, tapi qwen2.5:7b lebih boleh dipercayai)
   code_auditor: qwen2.5:7b
-  ctf_solver: qwen2.5:7b
+  threat_intel: qwen2.5:7b
+  researcher: qwen2.5:7b
+  reporter: qwen2.5:7b
+
+# Memori skill: setiap pakar bina "playbook" teknik boleh guna semula yang berkembang antara run.
+# Hanya TEKNIK generalisasi disimpan (bukan fakta/data klien); skill relevan disuntik ke tugasan baru.
+memory:
+  enabled: true
+  dir: memory
+  recall_k: 3          # bil. skill disuntik ke prompt pakar
+  max_per_agent: 60    # had skill setiap pakar (yang jarang guna dibuang bila penuh)
+  reflect: true        # ekstrak skill selepas tugasan pakar (1 panggilan model tambahan; set false untuk laju)
 
 orchestration:
   max_steps: 8              # bilangan maksimum tugasan yang supervisor boleh agih
