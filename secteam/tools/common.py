@@ -44,6 +44,28 @@ def require_approval(action: str, detail: str) -> None:
         raise ApprovalDenied(f"Operator tidak meluluskan '{action}'.")
 
 
+def request_human_input(question: str, secret: bool = False) -> str:
+    """Minta input teks daripada operator manusia semasa operasi (password, OTP, token, keputusan).
+    Jawapan rahsia (secret=True) disembunyikan semasa taip dan TIDAK direkod dalam audit."""
+    import getpass
+
+    with _approval_lock:
+        RT.audit.log("human_input_request", question=question[:300], secret=secret)
+        if not sys.stdin or not sys.stdin.isatty():
+            RT.audit.log("human_input_unavailable", question=question[:300])
+            return ("[TIADA MANUSIA] Mod bukan interaktif - tidak dapat memberi input ini. "
+                    "Teruskan tanpa input ini atau laporkan ia diperlukan.")
+        console.print(f"\n[bold magenta]Agent perlukan input[/] - {question}")
+        try:
+            ans = getpass.getpass("  (tersembunyi) > ") if secret else console.input("  > ")
+        except (EOFError, KeyboardInterrupt):
+            RT.audit.log("human_input_cancelled", question=question[:300])
+            return "[DIBATALKAN] Operator tidak memberi input."
+        # JANGAN log jawapan (boleh jadi password/OTP); rekod panjang sahaja
+        RT.audit.log("human_input_provided", secret=secret, chars=len(ans))
+        return ans
+
+
 def guarded(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):

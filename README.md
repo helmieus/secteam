@@ -38,6 +38,8 @@ prioriti ikut risiko & tulis laporan. Setiap ahli ialah subgraph ReAct (model â†
 | **Operator mengarah** | Spy/Analyst tidak menyerang; hanya Operator melakukan tindakan aktif, satu hipotesis pada satu masa, tiada DoS. |
 | **Sandbox pelaksanaan** | `run_python` jalan terasing (`python -I`) dalam `workspace/sandbox`. Jalankan secteam dalam **VM** (ia melaksanakan exploit sebenar). |
 | **Akses fail audit** | Alat audit kod Analyst hanya baca dalam `--code`. |
+| **Input manusia** | Agent boleh minta password / OTP / token / keputusan via `ask_human` (rahsia disembunyikan & TIDAK dilog). Mod bukan-interaktif â†’ ia maklum tiada manusia. |
+| **Pasang tool sendiri** | Agent boleh `install_tool` (apt/pip/pipx) & `run_shell` (gated kelulusan) untuk pasang tooling yang kurang dan baiki sendiri bila install gagal. |
 
 > Gunakan hanya pada sistem yang anda miliki atau ada **kebenaran bertulis**. Tanpa scope guard automatik,
 > tanggungjawab memastikan sasaran dibenarkan kini sepenuhnya pada anda. Scan/exploit tanpa kebenaran ialah

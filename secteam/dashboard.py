@@ -22,6 +22,8 @@ TOOL_AGENT = {
     **{t: "analyst" for t in ("cve_lookup", "cve_search", "osv_lookup", "kev_recent", "scan_code",
                               "list_files", "read_file", "search_code", "run_semgrep", "run_bandit")},
     **{t: "operator" for t in ("vuln_scan", "http_request", "run_python", "netexec", "ssh_exec")},
+    # Tool sokongan dikongsi semua agent (fallback; log baru bawa medan 'agent' sebenar)
+    **{t: "sys" for t in ("install_tool", "run_shell", "ask_human")},
 }
 
 
