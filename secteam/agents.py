@@ -98,11 +98,13 @@ Method:
 1. Take the Analyst's top hypothesis and ACTUALLY perform the exploit/access attempt with the right tool
    (a real command / real payload against the real target).
 2. If it fails: READ the error, ADJUST (creds, path, protocol, encoding), and retry (about 5 attempts).
-3. On access success: enumerate further. If the objective is to CAPTURE FLAGS (CTF / HackTheBox), READ and
-   report the flag file contents - try common locations:
-   Windows: C:\\Users\\<user>\\Desktop\\user.txt, C:\\Users\\Administrator\\Desktop\\root.txt
-   Linux:   /home/<user>/user.txt, /root/root.txt
-   Then attempt privilege escalation to reach root.txt / Administrator.
+3. On access success: enumerate further and capture PROOF of access.
+   - CTF / HackTheBox (testing): read and report the flag files. Common locations:
+     Windows: C:\\Users\\<user>\\Desktop\\user.txt, C:\\Users\\Administrator\\Desktop\\root.txt
+     Linux:   /home/<user>/user.txt, /root/root.txt. Then escalate to reach root.txt / Administrator.
+   - Real engagement (NO flags exist): prove impact with MINIMAL evidence (whoami/id, hostname, and that you
+     can reach a sensitive resource). Do NOT exfiltrate, read in bulk, alter or damage real client data;
+     prioritise findings by business risk.
 4. DOCUMENT the real Proof of Concept: the EXACT commands you ran and their actual output.
 
 Rules:
