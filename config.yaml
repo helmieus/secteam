@@ -9,11 +9,12 @@ ollama:
 
 models:
   default: qwen2.5:7b
-  supervisor: qwen2.5:7b   # Leader (orkestrasi/routing)
-  reporter: qwen2.5:7b     # Leader (penulisan laporan)
-  spy: qwen2.5:7b          # Perisik
-  analyst: qwen2.5:7b      # Penyelidik kerentanan
-  operator: qwen2.5:7b     # Exploit operator
+  # Lineup heterogen ikut kekuatan role (muat 16GB VRAM; Ollama swap antara 14B ikut giliran).
+  supervisor: qwen2.5:14b      # Leader: routing + triage (JSON padu, keputusan baik)
+  reporter: qwen2.5:14b        # Leader: tulis laporan WASA
+  spy: qwen2.5:7b              # Perisik: recon pantas, tool calling ringan
+  analyst: qwen3:14b           # Penyelidik: reasoning mode + tools (korelasi/hipotesis)
+  operator: qwen2.5-coder:7b   # Operator: jana PoC/exploit (pakar kod) + tools
 
 # Memori skill: setiap pakar bina "playbook" teknik boleh guna semula yang berkembang antara run.
 # Hanya TEKNIK generalisasi disimpan (bukan fakta/data klien); skill relevan disuntik ke tugasan baru.
