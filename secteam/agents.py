@@ -46,6 +46,9 @@ Focus:
 - Web: technology stack and endpoint discovery (http_probe, web_search).
 - Software/binary: file_info then extract_strings.
 
+NEVER scan or guess a target that was not explicitly given in your assignment (no default ranges like
+192.168.1.0/24). If no target was provided, do not call any scan tool - say a target is required.
+
 OUTPUT: structured facts (prefer a JSON-like block) that the Analyst can process directly.
 Only report what the tools actually returned; never invent data, versions or URLs.""",
     },

@@ -10,7 +10,15 @@ from typing import Annotated, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 
-from .agents import SPECIALISTS, build_specialist, clean_text, make_llm, reflect_skills, run_specialist
+from .agents import (
+    SPECIALISTS,
+    _iter_json_objects,
+    build_specialist,
+    clean_text,
+    make_llm,
+    reflect_skills,
+    run_specialist,
+)
 from .memory import SkillStore
 from .runtime import RT
 from .ui import console
@@ -39,6 +47,9 @@ hypotheses with confidence) -> Operator (actively verify/exploit the top hypothe
 
 Rules:
 - Assign ONE member at a time with a concrete, specific instruction (targets, files, which hypothesis).
+- NEVER invent, assume or guess a target (IP, host, URL, CIDR, port). Use ONLY targets explicitly given by
+  the operator or already present in the findings/context. If a task needs a target and none is available,
+  choose reporter and state that a target is required - do NOT make one up (never default to 192.168.x.x etc.).
 - Enforce the Rules of Engagement / scope shown in the context; prioritise by risk (Critical > High > Medium > Low).
 - Build on findings so far; never repeat an assignment that was already done.
 - spy only gathers data (no exploitation). analyst turns data into ranked, testable hypotheses - never send
@@ -275,6 +286,41 @@ def build_graph(cfg: dict, members: list[str] | None = None):
     g.add_conditional_edges("supervisor", lambda s: s["next"], {n: n for n in valid})
     g.add_edge("reporter", END)
     return g.compile()
+
+
+TRIAGE_PROMPT = """You are the Red Team Lead chatting with the operator. Classify their latest message.
+Return ONLY JSON: {"mode": "converse" | "task", "reply": "<text>"}
+
+- "converse": greetings, small talk, "who/what are you", "what can you do", thanks, or ANY message that is
+  NOT a concrete instruction to assess a specific target. Put a short, direct answer (in __LANG__) in "reply"
+  as the team lead. Do NOT start any scan or assign anyone.
+- "task": a concrete instruction to recon/scan/audit/exploit a specific target, a CVE question, or a
+  follow-up that continues the current assessment. Leave "reply" empty.
+
+Rules:
+- A casual or meta question is NEVER a task.
+- If the message asks for an assessment but gives NO target/scope and none exists in the context, use
+  "converse" and in "reply" ASK the operator for the exact target. NEVER invent a target (e.g. never assume
+  192.168.1.0/24)."""
+
+
+def triage(cfg: dict, user: str, context: str) -> dict:
+    """Asingkan borak/soalan (converse) daripada tugasan sebenar (task) dalam mod chat.
+    Elak pasukan dijalankan untuk mesej biasa + elak Leader reka sasaran."""
+    lang = cfg.get("report_language", "Bahasa Melayu")
+    llm = make_llm(cfg, "supervisor", json_mode=True)
+    sys = SystemMessage(TRIAGE_PROMPT.replace("__LANG__", lang))
+    human = HumanMessage(f"CONTEXT (targets/findings known so far):\n{context[:2000]}\n\nOPERATOR MESSAGE:\n{user}")
+    try:
+        raw = clean_text(llm.invoke([sys, human]).content)
+        d = json.loads(raw) if raw.startswith("{") else next(
+            (o for o in _iter_json_objects(raw) if isinstance(o, dict)), {})
+    except Exception:  # noqa: BLE001
+        d = {}
+    mode = str(d.get("mode", "task")).strip().lower()
+    if mode not in ("converse", "task"):
+        mode = "task"
+    return {"mode": mode, "reply": str(d.get("reply", ""))}
 
 
 def write_full_report(cfg: dict, task: str, context: str, findings: list[dict]) -> str:

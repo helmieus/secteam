@@ -214,7 +214,7 @@ def chat(engagement: Optional[Path] = EngOpt, code: Optional[Path] = CodeOpt,
         auto_approve: bool = AutoOpt, config: Path = CfgOpt):
     """Mod sembang: taip tugasan terus (tak perlu 'secteam run'). Leader uruskan pasukan.
     Dalam sembang: /report (laporan penuh WASA), /findings, /clear, /help, /exit."""
-    from .graph import _summarise_findings, available_specialists, build_graph, write_full_report
+    from .graph import _summarise_findings, available_specialists, build_graph, triage, write_full_report
 
     cfg = _setup(config, engagement, code, auto_approve)
     _preflight_models(cfg)
@@ -271,12 +271,18 @@ def chat(engagement: Optional[Path] = EngOpt, code: Optional[Path] = CodeOpt,
             console.print(f"\n[green]Laporan disimpan:[/] {path}")
             continue
 
-        # Prompt biasa -> jalankan pasukan (Leader akan route ikut keperluan)
-        if not session_task:
-            session_task = user
+        # Triage: borak/soalan dijawab terus; cuma tugasan sebenar jalankan pasukan.
         ctx = base_context
         if session_findings:
             ctx += "\n\nPrior findings this session:\n" + _summarise_findings(session_findings, 1500)
+        tri = triage(cfg, user, ctx)
+        if tri["mode"] == "converse":
+            console.print(f"[bold green]leader[/] > {tri['reply'] or 'Boleh jelaskan tugasan + sasaran?'}")
+            continue
+
+        # Tugasan sebenar -> jalankan pasukan (Leader route ikut keperluan)
+        if not session_task:
+            session_task = user
         state = {"task": user, "context": ctx, "findings": [], "next": "",
                  "instruction": "", "steps": 0, "report": ""}
         RT.audit.log("chat_task", task=user)
