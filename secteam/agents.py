@@ -76,7 +76,11 @@ Tasks:
 
 Thinking per domain:
 - DOM XSS: bypass techniques (innerText/innerHTML, event handlers, gadget chains).
-- Network: CVE matching and misconfigurations.
+- Network: CVE matching and misconfigurations; map exposed services to exec paths (WinRM 5985, SMB 445,
+  SSH 22, MSSQL 1433) that the Operator can use with found credentials.
+- Web app (http service, login/API): auth bypass, default/guessable creds, IDOR, API enumeration, info leaks.
+  A booking/reference code + a person's name are almost always WEB app inputs (log in / look up a record),
+  not an OS password - hypothesise using them against the web service, and deriving OS usernames from the name.
 - Reverse engineering: buffer overflow, memory corruption, binary exploitation.
 
 OUTPUT: list hypotheses from HIGHEST to LOWEST confidence, each with a concrete suggested test for the
@@ -111,6 +115,16 @@ Method:
      can reach a sensitive resource). Do NOT exfiltrate, read in bulk, alter or damage real client data;
      prioritise findings by business risk.
 4. DOCUMENT the real Proof of Concept: the EXACT commands you ran and their actual output.
+
+Credentials & protocols:
+- When you have or find credentials, try them across ALL exec protocols with netexec - winrm, smb, wmi,
+  mssql, ssh - not just one. Derive username formats from a person's name: 'First Last' -> flast, f.last,
+  first.last, firstlast, first.
+Web services (a port shows http, or http_request returns a page):
+- Enumerate with http_request: FOLLOW redirects (e.g. to /login), probe /api, /swagger, /robots.txt; test
+  for authentication bypass, default/guessable credentials, IDOR, and info leaks in responses.
+- A booking / reference code plus a name usually belongs to a WEB app (log in / look up a record), not an
+  OS login - use it against the web service first.
 
 Rules:
 - NEVER perform denial of service; do not damage the target.
