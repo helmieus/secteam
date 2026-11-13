@@ -280,9 +280,9 @@ def build_graph(cfg: dict, members: list[str] | None = None):
 def write_full_report(cfg: dict, task: str, context: str, findings: list[dict]) -> str:
     """Jana laporan penuh (format company) daripada findings sesi - dipanggil oleh 'secteam report'
     bila operator berpuas hati dengan taklimat. Berasingan daripada graf 'run'."""
-    lang = cfg.get("report_language", "Bahasa Melayu")
+    # Laporan rasmi klien = English (padan format company WASA), walaupun taklimat dalam Bahasa Melayu.
     rep_llm = make_llm(cfg, "reporter")
-    system = SystemMessage(REPORTER_PROMPT.replace("__LANG__", lang))
+    system = SystemMessage(REPORTER_PROMPT.replace("__LANG__", "English"))
     human = HumanMessage(
         f"TASK:\n{task}\n\nCONTEXT:\n{context}\n\nFINDINGS:\n{_summarise_findings(findings, 4000)}"
     )

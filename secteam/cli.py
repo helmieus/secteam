@@ -210,6 +210,96 @@ def report(findings: Optional[Path] = typer.Argument(None, help="Fail *-findings
 
 
 @app.command()
+def chat(engagement: Optional[Path] = EngOpt, code: Optional[Path] = CodeOpt,
+        auto_approve: bool = AutoOpt, config: Path = CfgOpt):
+    """Mod sembang: taip tugasan terus (tak perlu 'secteam run'). Leader uruskan pasukan.
+    Dalam sembang: /report (laporan penuh WASA), /findings, /clear, /help, /exit."""
+    from .graph import _summarise_findings, available_specialists, build_graph, write_full_report
+
+    cfg = _setup(config, engagement, code, auto_approve)
+    _preflight_models(cfg)
+    members = available_specialists()
+    graph = build_graph(cfg, members)
+    base_context = _context()
+    out_dir = Path(cfg.get("paths", {}).get("reports", "reports"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    session_findings: list[dict] = []
+    session_task = ""
+
+    console.print(Panel(
+        "Taip tugasan terus (cth. \"Pentest http://127.0.0.1:5000\" atau \"apa itu CVE-2024-3400\").\n"
+        "[bold]/report[/] jana laporan penuh  ·  [bold]/findings[/] bukti  ·  [bold]/clear[/] reset  ·  "
+        "[bold]/exit[/] keluar",
+        title="secteam chat", border_style="cyan"))
+    console.print(f"[dim]Pasukan: {', '.join(members)} + Leader[/]")
+
+    while True:
+        try:
+            user = console.input("\n[bold cyan]anda[/] > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\nKeluar.")
+            break
+        if not user:
+            continue
+        low = user.lower()
+        if low in ("/exit", "/quit", "/keluar"):
+            break
+        if low in ("/help", "/?"):
+            console.print("[dim]/report  jana laporan penuh (WASA, English)\n/findings  papar bukti mentah\n"
+                          "/clear  reset sesi\n/exit  keluar\nselain itu: taip tugasan terus.[/]")
+            continue
+        if low in ("/clear", "/reset"):
+            session_findings, session_task = [], ""
+            console.print("[yellow]Sesi dikosongkan.[/]")
+            continue
+        if low in ("/findings", "/bukti"):
+            if session_findings:
+                console.print_json(data=session_findings)
+            else:
+                console.print("[dim](tiada findings lagi)[/]")
+            continue
+        if low in ("/report", "/laporan"):
+            if not session_findings:
+                console.print("[yellow]Tiada findings lagi — jalankan tugasan dahulu.[/]")
+                continue
+            console.rule("[green]Menjana laporan penuh (WASA)[/]")
+            rep = write_full_report(cfg, session_task or "Security assessment", base_context, session_findings)
+            stem = f"{dt.datetime.now():%Y%m%d-%H%M%S}-{_slug(session_task or 'report')}"
+            path = out_dir / f"{stem}-report.md"
+            path.write_text(rep, encoding="utf-8")
+            console.print(rep)
+            console.print(f"\n[green]Laporan disimpan:[/] {path}")
+            continue
+
+        # Prompt biasa -> jalankan pasukan (Leader akan route ikut keperluan)
+        if not session_task:
+            session_task = user
+        ctx = base_context
+        if session_findings:
+            ctx += "\n\nPrior findings this session:\n" + _summarise_findings(session_findings, 1500)
+        state = {"task": user, "context": ctx, "findings": [], "next": "",
+                 "instruction": "", "steps": 0, "report": ""}
+        RT.audit.log("chat_task", task=user)
+        brief, new_findings = "", []
+        for update in graph.stream(state, {"recursion_limit": 200}, stream_mode="updates"):
+            for _node, val in update.items():
+                if not val:
+                    continue
+                new_findings += val.get("findings", [])
+                brief = val.get("report") or brief
+        session_findings += new_findings
+        stem = f"{dt.datetime.now():%Y%m%d-%H%M%S}-{_slug(user)}"
+        (out_dir / f"{stem}-findings.json").write_text(
+            json.dumps({"task": user, "context": ctx, "findings": new_findings}, indent=2, ensure_ascii=False),
+            encoding="utf-8")
+        console.rule("[green]Taklimat[/]")
+        console.print(brief)
+        console.print("[dim]Taip tugasan lain, atau /report bila puas hati.[/]")
+
+    console.print("[dim]Sesi sembang tamat.[/]")
+
+
+@app.command()
 def skills(agent: Optional[str] = typer.Argument(None, help="Nama pakar (kosong = semua)."),
            forget: bool = typer.Option(False, "--forget", help="Kosongkan playbook pakar (atau semua)."),
            config: Path = CfgOpt):
