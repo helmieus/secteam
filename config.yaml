@@ -15,6 +15,7 @@ models:
   spy: qwen2.5:7b              # Perisik: recon pantas, tool calling ringan
   analyst: qwen3:14b           # Penyelidik: reasoning mode + tools (korelasi/hipotesis)
   operator: qwen2.5-coder:7b   # Operator: jana PoC/exploit (pakar kod) + tools
+  solver: qwen3:14b            # Mod ejen-tunggal (secteam solve): reasoning untuk solve box end-to-end
 
 # Memori skill: setiap pakar bina "playbook" teknik boleh guna semula yang berkembang antara run.
 # Hanya TEKNIK generalisasi disimpan (bukan fakta/data klien); skill relevan disuntik ke tugasan baru.

@@ -152,6 +152,34 @@ def run(task: str = typer.Argument(..., help="Tugasan dalam bahasa biasa."),
 
 
 @app.command()
+def solve(objective: str = typer.Argument(..., help="Objektif solve/exploit (cth. 'Pwn 10.129.75.142, dapatkan user.txt & root.txt')."),
+          engagement: Optional[Path] = EngOpt, code: Optional[Path] = CodeOpt, auto_approve: bool = AutoOpt,
+          max_rounds: int = typer.Option(60, "--max-rounds", help="Had pusingan alat ejen solver."),
+          config: Path = CfgOpt):
+    """Mod ejen-tunggal: SATU agent autonomous solve/exploit target end-to-end (recon->exploit->flag->privesc).
+    Lebih fleksibel daripada pipeline (ada run_shell universal); sesuai untuk solve HTB box."""
+    from .agents import build_specialist, run_specialist
+
+    cfg = _setup(config, engagement, code, auto_approve)
+    _preflight_models(cfg)
+    console.rule("[bold cyan]Mod Solve (ejen-tunggal)[/]")
+    console.print(f"[bold]Objektif:[/] {objective}")
+    RT.audit.agent = "solver"
+    RT.audit.log("solve_start", objective=objective, max_rounds=max_rounds)
+    sub = build_specialist(cfg, "solver")
+    result = run_specialist(sub, "solver", f"Objective:\n{objective}\n\nContext:\n{_context()}", max_rounds)
+    out_dir = Path(cfg.get("paths", {}).get("reports", "reports"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = f"{dt.datetime.now():%Y%m%d-%H%M%S}-{_slug(objective)}"
+    path = out_dir / f"{stem}-solve.md"
+    path.write_text(result, encoding="utf-8")
+    RT.audit.log("solve_done", output=str(path), chars=len(result))
+    console.rule("[bold green]Hasil Solve[/]")
+    console.print(result)
+    console.print(f"\n[green]Disimpan:[/] {path}")
+
+
+@app.command()
 def audit(path: Path = typer.Argument(..., help="Direktori kod sumber."),
           focus: str = typer.Option("", help="Fokus tambahan, cth. 'authentication dan SQL'."),
           max_steps: Optional[int] = StepsOpt, config: Path = CfgOpt):
