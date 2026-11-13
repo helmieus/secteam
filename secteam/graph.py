@@ -214,6 +214,17 @@ def build_graph(cfg: dict, members: list[str] | None = None):
         t0 = time.perf_counter()
         d = _parse_decision(sup_llm.invoke([sup_system, human]).content, valid)
         ms = int((time.perf_counter() - t0) * 1000)
+        # Guard eksploitasi: jangan tamat ke laporan sebelum Operator benar-benar cuba exploit,
+        # setelah Analyst hasilkan hipotesis (elak berhenti di cadangan sahaja).
+        if (d["next"] == "reporter" and "operator" in members
+                and any(f["agent"] == "analyst" for f in state["findings"])
+                and not any(f["agent"] == "operator" for f in state["findings"])):
+            d = {"next": "operator",
+                 "instruction": ("Actively exploit the Analyst's top hypothesis against the target NOW: run the "
+                                 "real commands/requests (http_request to the web app, netexec/ssh_exec for "
+                                 "access), try to gain command execution and capture proof. Do not just advise."),
+                 "reason": "guard: operator mesti cuba exploit sebelum laporan"}
+            RT.audit.log("exploit_guard", forced="operator")
         why = loop_guard(d, state["findings"], max_per_agent)
         if why:
             console.print(f"[yellow]Pengawal gelung: {why} -> reporter[/]")
