@@ -51,22 +51,62 @@ Rules:
 Respond with ONLY a JSON object:
 {"next": "<member name>", "instruction": "<specific instruction>", "reason": "<one short sentence>"}"""
 
-REPORTER_PROMPT = """You are the Red Team Lead writing the final penetration test report in __LANG__, in Markdown.
-Use ONLY information present in the findings; do not invent anything. Findings end with an automatic evidence
-check: anything marked [TIDAK DISAHKAN] must NOT be presented as a confirmed result - list it only under
-caveats as unverified. Only items marked [DISAHKAN] (or quoted from tool output) may be stated as results.
+REPORTER_PROMPT = """You are the Red Team Lead writing the final Web Application Security Assessment (WASA)
+report in the company's standard format. Write prose in __LANG__, but keep SECTION TITLES and FIELD LABELS
+in English (company standard). Use ONLY information in the findings; do not invent anything.
+Findings end with an automatic evidence check: items marked [TIDAK DISAHKAN] are NOT confirmed - present
+them as Hypotheses only, never as proven. Only [DISAHKAN] / tool-quoted items are confirmed results.
 
-FORMAT LAPORAN (follow exactly, professional and technical):
-# <Report title>
-## 1. Ringkasan Eksekutif          (for management: risk posture, key outcomes, minimal jargon)
-## 2. Penemuan Teknikal            (for IT staff: table ID | Tajuk | Severity | Status (Disahkan/Hipotesis);
-                                    then one subsection per finding with Bukti, Impak)
-## 3. Proof of Concept             (reproducible steps / requests / output from the Operator's VERIFIED work only)
-## 4. Cadangan Pembaikan           (concrete remediation per finding)
-## 5. Lampiran                     (raw log excerpts, tools used, scope & limitations)
+Produce Markdown in EXACTLY this structure:
 
-Output clean Markdown ready for both a client report and a Jekyll blog (proper headings, fenced code blocks
-for commands/output). Keep verified facts separate from hypotheses."""
+# <Client / Application> - Web Application Security Assessment Report
+
+## 1. INTRODUCTION
+Purpose of the assessment and intended AUDIENCE.
+
+## 2. ASSESSMENT ACTIVITIES
+- **Overview:** objective of the exercise.
+- **Point of Attack:** External / Internal.
+- **Target:** the assessed URL(s) / host(s) from the findings.
+- **Scope of Work:** what was tested.
+- **Tools Used:** list only the tools the team actually used (from the findings).
+
+## 3. SEVERITY RATING DEFINITION
+Short table: Critical / High / Medium / Low / Info and what each means.
+
+## 4. SUMMARY OF FINDINGS
+One sentence: "A total of N target(s) was tested and produced X Critical, Y High, Z Medium, W Low."
+Then a table: No | Vulnerability | Severity | Status (Disahkan / Hipotesis).
+
+## 5. FINDINGS
+Group by severity, HIGHEST first (Critical -> High -> Medium -> Low). For EACH finding use this EXACT field
+template (keep labels in English):
+### <FINDING NAME IN CAPS>
+- **Severity:** <Critical/High/Medium/Low> - <Disahkan / Hipotesis>
+- **Point of Attack:** External / Internal
+- **CVE / CWE:** <CWE-id - name; CVE id ONLY if it appears in tool output>
+- **CVSS:** <score + rating (+ vector if derivable), else "Estimated">
+- **OWASP Top 10:** <A0x:2021 - category>
+- **ISO/IEC 27001:** <relevant Annex A control(s)>
+- **Root Cause:** <one line>
+- **Description:** <from evidence>
+- **Impact:** <from evidence>
+- **Proof of Concept:** <reproducible steps / request / tool output - ONLY from the Operator's VERIFIED
+  work; if not verified, write "Not verified - hypothesis, PoC pending">
+- **Recommendation:** <concrete fix>
+- **References:** <CWE / OWASP URLs>
+- **Affected Host / Port:** <target : port / protocol>
+
+## 6. CONCLUSION
+Overall risk posture and recommended next steps.
+
+Rules:
+- CWE / OWASP / ISO mappings MAY be derived from the vulnerability class (standard classifications).
+- But Description, Impact, Proof of Concept, Affected Host and CVE ids MUST come from the actual findings /
+  tool output - never fabricate a PoC. If the Operator did not verify it, mark the finding Hipotesis.
+- Output clean Markdown (fenced code blocks for requests/output), ready for a client report and a Jekyll blog.
+- Admin sections (cover page, Revision History, Document Approval, Table of Contents, Acceptance Verification)
+  are added later from the company template - do NOT fabricate approver names, dates or signatures."""
 
 BRIEF_PROMPT = """You are the Red Team Lead giving a SHORT briefing to the operator - NOT a formal report.
 In __LANG__, concisely present what the team found so far:
