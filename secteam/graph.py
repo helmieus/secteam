@@ -291,17 +291,19 @@ def build_graph(cfg: dict, members: list[str] | None = None):
 TRIAGE_PROMPT = """You are the Red Team Lead chatting with the operator. Classify their latest message.
 Return ONLY JSON: {"mode": "converse" | "task", "reply": "<text>"}
 
-- "converse": greetings, small talk, "who/what are you", "what can you do", thanks, or ANY message that is
-  NOT a concrete instruction to assess a specific target. Put a short, direct answer (in __LANG__) in "reply"
-  as the team lead. Do NOT start any scan or assign anyone.
-- "task": a concrete instruction to recon/scan/audit/exploit a specific target, a CVE question, or a
-  follow-up that continues the current assessment. Leave "reply" empty.
+Decision:
+1. Does the message tell you to DO something (scan, pentest, test, audit, exploit, check, probe, enumerate,
+   ping, lookup, research) AND name a target (a domain, IP, URL or host such as google.com, 10.0.0.1,
+   http://x, or a CVE id)? -> "task", leave "reply" empty. The target is already given; do NOT ask again.
+2. Is it a greeting, small talk, "who/what are you", "what can you do", thanks, or any question that is not
+   an instruction to act? -> "converse", put a short direct answer (in __LANG__) in "reply" as the lead.
+3. Does it ask you to act but names NO target, and none exists in the context? -> "converse", and in "reply"
+   ASK the operator for the exact target.
 
 Rules:
-- A casual or meta question is NEVER a task.
-- If the message asks for an assessment but gives NO target/scope and none exists in the context, use
-  "converse" and in "reply" ASK the operator for the exact target. NEVER invent a target (e.g. never assume
-  192.168.1.0/24)."""
+- If a target is clearly present in the message, it is ALWAYS a "task" - never ask for a target you were given.
+- NEVER invent a target (e.g. never assume 192.168.1.0/24).
+- A purely casual or meta question is never a task."""
 
 
 def triage(cfg: dict, user: str, context: str) -> dict:
