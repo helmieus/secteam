@@ -55,6 +55,10 @@ Rules:
 - spy only gathers data (no exploitation). analyst turns data into ranked, testable hypotheses - never send
   it exploitation work. operator verifies hypotheses actively (approval-gated) - give it ONE hypothesis + test.
 - Do not send the operator until the analyst has produced at least one concrete hypothesis.
+- If the objective is to EXPLOIT or CAPTURE FLAGS (CTF / HackTheBox: user.txt, root.txt), keep driving:
+  after the analyst ranks hypotheses, assign the operator to ACTUALLY exploit (gain access, run commands,
+  read the flag) and then to escalate for root. Do NOT end at hypotheses or recommendations while the
+  operator still has promising, untried vectors or credentials to test.
 - Each member may be used at most twice. Only assign members listed above.
 - Findings may end with an automatic evidence check. A result/CVE marked [TIDAK DISAHKAN] is NOT confirmed:
   either assign another attempt or go to reporter. Never treat an unverified claim as the answer.

@@ -27,8 +27,8 @@ memory:
 
 orchestration:
   max_steps: 8              # bilangan maksimum tugasan yang supervisor boleh agih
-  max_tool_rounds: 12       # bilangan maksimum pusingan alat setiap agent setiap tugasan
-  max_calls_per_agent: 2    # pengawal gelung: had tugasan untuk setiap pakar
+  max_tool_rounds: 20       # pusingan alat setiap agent/tugasan (Operator perlukan ruang untuk exploit berbilang langkah)
+  max_calls_per_agent: 3    # pengawal gelung: had tugasan setiap pakar (foothold -> privesc perlukan >2)
   max_parallel_tool_calls: 4  # had panggilan alat serentak setiap giliran model (elak ribut panggilan)
   max_tool_output_chars: 6000
 
