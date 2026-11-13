@@ -154,20 +154,23 @@ def run(task: str = typer.Argument(..., help="Tugasan dalam bahasa biasa."),
 @app.command()
 def solve(objective: str = typer.Argument(..., help="Objektif solve/exploit (cth. 'Pwn 10.129.75.142, dapatkan user.txt & root.txt')."),
           engagement: Optional[Path] = EngOpt, code: Optional[Path] = CodeOpt, auto_approve: bool = AutoOpt,
+          gui: bool = typer.Option(False, "--gui", help="Guna automasi GUI/RDP (box perlu interaksi desktop, cth. kiosk escape)."),
           max_rounds: int = typer.Option(60, "--max-rounds", help="Had pusingan alat ejen solver."),
           config: Path = CfgOpt):
     """Mod ejen-tunggal: SATU agent autonomous solve/exploit target end-to-end (recon->exploit->flag->privesc).
-    Lebih fleksibel daripada pipeline (ada run_shell universal); sesuai untuk solve HTB box."""
+    Lebih fleksibel daripada pipeline (ada run_shell universal); sesuai untuk solve HTB box. --gui untuk
+    box yang perlukan interaksi desktop RDP."""
     from .agents import build_specialist, run_specialist
 
     cfg = _setup(config, engagement, code, auto_approve)
     _preflight_models(cfg)
-    console.rule("[bold cyan]Mod Solve (ejen-tunggal)[/]")
+    role = "gui_solver" if gui else "solver"
+    console.rule(f"[bold cyan]Mod Solve ({'GUI/RDP' if gui else 'ejen-tunggal'})[/]")
     console.print(f"[bold]Objektif:[/] {objective}")
-    RT.audit.agent = "solver"
-    RT.audit.log("solve_start", objective=objective, max_rounds=max_rounds)
-    sub = build_specialist(cfg, "solver")
-    result = run_specialist(sub, "solver", f"Objective:\n{objective}\n\nContext:\n{_context()}", max_rounds)
+    RT.audit.agent = role
+    RT.audit.log("solve_start", objective=objective, max_rounds=max_rounds, gui=gui)
+    sub = build_specialist(cfg, role)
+    result = run_specialist(sub, role, f"Objective:\n{objective}\n\nContext:\n{_context()}", max_rounds)
     out_dir = Path(cfg.get("paths", {}).get("reports", "reports"))
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{dt.datetime.now():%Y%m%d-%H%M%S}-{_slug(objective)}"

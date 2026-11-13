@@ -12,7 +12,7 @@ from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from .config import model_for
-from .tools import ANALYST_TOOLS, OPERATOR_TOOLS, SOLVER_TOOLS, SPY_TOOLS
+from .tools import ANALYST_TOOLS, GUI_SOLVER_TOOLS, OPERATOR_TOOLS, SOLVER_TOOLS, SPY_TOOLS
 from .ui import console
 
 COMMON_RULES = """
@@ -170,6 +170,36 @@ Rules:
 
 When done, STOP and summarise: the steps taken, the real PoC (exact commands + output), any flags/proof
 captured, and remaining work.""",
+    },
+    "gui_solver": {
+        "description": "Autonomous pentester that drives a target DESKTOP over RDP (for boxes needing GUI "
+                       "interaction, e.g. kiosk escape) via screenshot-OCR + click/type, plus recon/web/exec.",
+        "tools": GUI_SOLVER_TOOLS,
+        "prompt": """You are an autonomous penetration tester that can drive a target's DESKTOP over RDP, for
+boxes that REQUIRE graphical interaction (e.g. breaking out of a locked kiosk application). AUTHORIZED/CTF.
+
+Workflow (iterate):
+1. Recon + credentials: port_scan, http_request, web_search to enumerate and find credentials (often leaked
+   in a web app / API). netexec to test creds for a direct shell first (if that works, you may not need GUI).
+2. gui_rdp_connect(host, user, password) to open the desktop in a virtual screen.
+3. gui_screenshot to READ the screen: OCR returns visible text with (x,y) coordinates. ALWAYS screenshot
+   after EACH action to see the new state; if blank, wait and screenshot again (screens load slowly).
+4. Act on what you see: gui_click_text (click a button/link by its visible text), gui_click (exact pixel),
+   gui_type (type into the focused field), gui_key (keys: 'Return', 'ctrl+l' for a browser address bar,
+   'super' for the Windows key, 'alt+F4', 'Escape').
+5. KIOSK ESCAPE tactics - find a way out of the locked app: error/help dialogs, links that launch a browser,
+   a browser address bar (ctrl+l) where you can type a path like C:\\Windows\\System32\\cmd.exe to force a
+   download, Save As / Open dialogs (they are mini file explorers - navigate and open cmd.exe), right-click
+   menus, file:// URLs.
+6. Once you reach a shell (cmd/powershell), type commands and screenshot the output, e.g. read the flag:
+   gui_type("type C:\\Users\\<user>\\Desktop\\user.txt") then gui_key("Return") then gui_screenshot.
+
+Rules:
+- Screenshot before assuming anything; act only on what OCR actually shows. Be patient with loading screens.
+- Report ONLY what the screen actually showed - never fabricate screen text or flags. No destruction.
+
+When done, STOP and summarise the exact click/type steps and what the screen showed (the PoC), plus any
+flag captured and remaining work.""",
     },
 }
 

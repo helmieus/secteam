@@ -1,6 +1,7 @@
 """Kumpulan alat ikut peranan Red Team: Spy / Analyst / Operator."""
 from .access import netexec, ssh_exec
 from .exploit import http_request, run_python
+from .gui import GUI_TOOLS
 from .inspect import extract_strings, file_info
 from .intel import cve_lookup, cve_search, kev_recent, osv_lookup
 from .recon import dns_lookup, http_probe, port_scan, rdap_lookup, vuln_scan
@@ -24,4 +25,10 @@ OPERATOR_TOOLS = [vuln_scan, http_request, run_python, netexec, ssh_exec, *SETUP
 SOLVER_TOOLS = [port_scan, http_probe, http_request, web_search, cve_lookup, netexec, ssh_exec,
                 run_python, vuln_scan, run_shell, install_tool, ask_human]
 
-__all__ = ["SPY_TOOLS", "ANALYST_TOOLS", "OPERATOR_TOOLS", "SETUP_TOOLS", "SOLVER_TOOLS"]
+# GUI solver: untuk box yang perlukan interaksi desktop (kiosk escape). Recon/web untuk dapatkan cred +
+# GUI/RDP automation untuk pijak masuk melalui desktop.
+GUI_SOLVER_TOOLS = [port_scan, http_probe, http_request, web_search, netexec, run_shell, install_tool,
+                    ask_human, *GUI_TOOLS]
+
+__all__ = ["SPY_TOOLS", "ANALYST_TOOLS", "OPERATOR_TOOLS", "SETUP_TOOLS", "SOLVER_TOOLS", "GUI_TOOLS",
+           "GUI_SOLVER_TOOLS"]
