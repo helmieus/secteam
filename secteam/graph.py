@@ -30,8 +30,9 @@ SUPERVISOR_PROMPT = """You are the Red Team Lead (Ketua Pasukan). Direct the tea
 
 Available team members:
 __MEMBERS__
-- reporter: YOU (the Lead) write the final professional report and end the job. Choose it when the
-  hypotheses have been verified, when no member can make further progress, or when findings are sufficient.
+- reporter: end the assignment and give the operator a short BRIEFING of the findings. You do NOT write
+  the full formal report here - the operator reviews the briefing and requests the full report separately.
+  Choose it when the hypotheses have been verified, when no member can progress, or when findings are sufficient.
 
 The pipeline is: Spy (gather raw intel) -> Analyst (correlate data, rank vulnerabilities as testable
 hypotheses with confidence) -> Operator (actively verify/exploit the top hypotheses).
@@ -66,6 +67,14 @@ FORMAT LAPORAN (follow exactly, professional and technical):
 
 Output clean Markdown ready for both a client report and a Jekyll blog (proper headings, fenced code blocks
 for commands/output). Keep verified facts separate from hypotheses."""
+
+BRIEF_PROMPT = """You are the Red Team Lead giving a SHORT briefing to the operator - NOT a formal report.
+In __LANG__, concisely present what the team found so far:
+- Per specialist (Spy / Analyst / Operator): the KEY results in bullet points.
+- Clearly separate VERIFIED results ([DISAHKAN] or quoted from tool output) from HYPOTHESIS / [TIDAK DISAHKAN].
+- State what is NOT yet done, and any decision you need from the operator.
+Keep it short (a briefing, not a document). Do NOT write the formal report sections.
+End with exactly: "Jalankan `secteam report` bila anda berpuas hati untuk laporan penuh." """
 
 
 def _summarise_findings(findings: list[dict], per_item: int) -> str:
@@ -201,18 +210,20 @@ def build_graph(cfg: dict, members: list[str] | None = None):
         return node
 
     def reporter(state: TeamState):
-        console.rule("[bold green]Menulis laporan[/]")
-        RT.audit.log("reporter_start", agent="reporter")
+        # 'run' berhenti dengan TAKLIMAT (briefing), bukan laporan penuh. Laporan penuh dijana
+        # secara berasingan oleh 'secteam report' bila operator berpuas hati.
+        console.rule("[bold green]Taklimat pasukan[/]")
+        RT.audit.log("brief_start", agent="leader")
         t0 = time.perf_counter()
-        system = SystemMessage(REPORTER_PROMPT.replace("__LANG__", lang))
+        system = SystemMessage(BRIEF_PROMPT.replace("__LANG__", lang))
         human = HumanMessage(
             f"TASK:\n{state['task']}\n\nCONTEXT:\n{state['context']}\n\n"
             f"FINDINGS:\n{_summarise_findings(state['findings'], 4000)}"
         )
-        report = clean_text(rep_llm.invoke([system, human]).content)
-        RT.audit.log("reporter_done", agent="reporter", chars=len(report),
+        brief = clean_text(rep_llm.invoke([system, human]).content)
+        RT.audit.log("brief_done", agent="leader", chars=len(brief),
                      ms=int((time.perf_counter() - t0) * 1000))
-        return {"report": report}
+        return {"report": brief}
 
     g = StateGraph(TeamState)
     g.add_node("supervisor", supervisor)
@@ -224,3 +235,15 @@ def build_graph(cfg: dict, members: list[str] | None = None):
     g.add_conditional_edges("supervisor", lambda s: s["next"], {n: n for n in valid})
     g.add_edge("reporter", END)
     return g.compile()
+
+
+def write_full_report(cfg: dict, task: str, context: str, findings: list[dict]) -> str:
+    """Jana laporan penuh (format company) daripada findings sesi - dipanggil oleh 'secteam report'
+    bila operator berpuas hati dengan taklimat. Berasingan daripada graf 'run'."""
+    lang = cfg.get("report_language", "Bahasa Melayu")
+    rep_llm = make_llm(cfg, "reporter")
+    system = SystemMessage(REPORTER_PROMPT.replace("__LANG__", lang))
+    human = HumanMessage(
+        f"TASK:\n{task}\n\nCONTEXT:\n{context}\n\nFINDINGS:\n{_summarise_findings(findings, 4000)}"
+    )
+    return clean_text(rep_llm.invoke([system, human]).content)

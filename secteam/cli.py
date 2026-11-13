@@ -116,26 +116,30 @@ def _execute(task: str, cfg: dict, max_steps: Optional[int], members: Optional[l
     state = {"task": task, "context": _context(), "findings": [], "next": "",
              "instruction": "", "steps": 0, "report": ""}
     findings: list[dict] = []
-    report = ""
+    brief = ""
     for update in graph.stream(state, {"recursion_limit": 200}, stream_mode="updates"):
         for _node, val in update.items():
             if not val:
                 continue
             findings += val.get("findings", [])
-            report = val.get("report") or report
+            brief = val.get("report") or brief
 
     out_dir = Path(cfg.get("paths", {}).get("reports", "reports"))
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{dt.datetime.now():%Y%m%d-%H%M%S}-{_slug(task)}"
-    (out_dir / f"{stem}.md").write_text(report, encoding="utf-8")
-    (out_dir / f"{stem}-findings.json").write_text(
+    brief_file = out_dir / f"{stem}-brief.md"
+    findings_file = out_dir / f"{stem}-findings.json"
+    brief_file.write_text(brief, encoding="utf-8")
+    findings_file.write_text(
         json.dumps({"task": task, "context": state["context"], "findings": findings}, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    RT.audit.log("session_end", report=str(out_dir / f"{stem}.md"),
-                 findings_file=str(out_dir / f"{stem}-findings.json"))
-    console.rule("[bold green]Selesai[/]")
-    console.print(f"Laporan: [bold]{out_dir / (stem + '.md')}[/]\nBukti mentah: {out_dir / (stem + '-findings.json')}")
+    RT.audit.log("session_end", brief=str(brief_file), findings_file=str(findings_file))
+    console.rule("[bold green]Taklimat[/]")
+    console.print(brief)
+    console.print(f"\n[dim]Bukti mentah: {findings_file}[/]")
+    console.print("[bold yellow]Bila berpuas hati, jana laporan penuh:[/] "
+                  f"secteam report \"{findings_file.name}\"  (atau tanpa argumen untuk yang terbaru)")
 
 
 @app.command()
@@ -175,6 +179,34 @@ def research(query: str = typer.Argument(..., help="Soalan maklumat am (cth. 'ap
     """Cari maklumat di internet dengan sumber (bukan CVE: tool, teknik, konsep, produk)."""
     cfg = _setup(config, None, None, False)
     _execute(f"Research this and report factually with sources: {query}", cfg, 3, members=["spy"])
+
+
+@app.command()
+def report(findings: Optional[Path] = typer.Argument(None, help="Fail *-findings.json (kosong = yang terbaru)."),
+           config: Path = CfgOpt):
+    """Jana laporan penuh (format company) daripada taklimat sesi, bila anda dah berpuas hati."""
+    from .graph import write_full_report
+
+    cfg = load_config(config)
+    reports_dir = Path(cfg.get("paths", {}).get("reports", "reports"))
+    if findings is None:
+        cands = sorted(reports_dir.glob("*-findings.json"))
+        if not cands:
+            console.print("[red]Tiada fail *-findings.json dalam reports/. Jalankan 'secteam run ...' dahulu.[/]")
+            raise typer.Exit(1)
+        findings = cands[-1]
+    elif not findings.exists() and (reports_dir / findings.name).exists():
+        findings = reports_dir / findings.name
+    if not findings.exists():
+        raise typer.BadParameter(f"{findings} tidak wujud")
+    _preflight_models(cfg)
+    data = json.loads(findings.read_text(encoding="utf-8"))
+    console.print(f"[bold]Menjana laporan penuh daripada:[/] {findings.name}")
+    report_md = write_full_report(cfg, data["task"], data.get("context", ""), data.get("findings", []))
+    out = findings.with_name(findings.name.replace("-findings.json", "-report.md"))
+    out.write_text(report_md, encoding="utf-8")
+    console.rule("[bold green]Laporan penuh[/]")
+    console.print(f"Laporan: [bold]{out}[/]")
 
 
 @app.command()
